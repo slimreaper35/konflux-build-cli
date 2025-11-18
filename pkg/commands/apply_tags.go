@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
-	"strconv"
 	"strings"
 
 	cliWrappers "github.com/konflux-ci/konflux-build-cli/pkg/cliwrappers"
@@ -107,7 +106,7 @@ func (c *ApplyTags) initCliWrappers() error {
 func (c *ApplyTags) Run() error {
 	c.logParams()
 
-	c.imageName = c.normalizeImageName(c.Params.ImageUrl)
+	c.imageName = common.GetImageName(c.Params.ImageUrl)
 	if err := c.validateParams(); err != nil {
 		return err
 	}
@@ -123,7 +122,7 @@ func (c *ApplyTags) Run() error {
 			return err
 		}
 		for _, tag := range tagsFromLabel {
-			if !c.isTagValid(tag) {
+			if !common.IsImageTagValid(tag) {
 				return fmt.Errorf("tag from label '%s' is invalid", tag)
 			}
 		}
@@ -212,30 +211,18 @@ func (c *ApplyTags) applyTags(tags []string) error {
 	return nil
 }
 
-// normalizeImageName returns full image name from given image reference
-// by removing tag or digest or both, if any.
-func (c *ApplyTags) normalizeImageName(imageURL string) string {
-	digestRegex := regexp.MustCompile(`@sha256:[a-fA-F0-9]{64}$`)
-	imageWithoutDigest := digestRegex.ReplaceAllString(imageURL, "")
-
-	tagRegex := regexp.MustCompile(`:[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$`)
-	image := tagRegex.ReplaceAllString(imageWithoutDigest, "")
-
-	return image
-}
-
 func (c *ApplyTags) validateParams() error {
 	// Validate imageName instead of Params.ImageUrl to avoid calling normalizeImageName second time.
-	if !c.isImageNameValid(c.imageName) {
+	if !common.IsImageNameValid(c.imageName) {
 		return fmt.Errorf("image '%s' is invalid", c.imageName)
 	}
 
-	if !c.isDigestValid(c.Params.Digest) {
+	if !common.IsImageDigestValid(c.Params.Digest) {
 		return fmt.Errorf("image digest '%s' is invalid", c.Params.Digest)
 	}
 
 	for _, tag := range c.Params.NewTags {
-		if !c.isTagValid(tag) {
+		if !common.IsImageTagValid(tag) {
 			return fmt.Errorf("tag '%s' is invalid", tag)
 		}
 	}
@@ -245,88 +232,6 @@ func (c *ApplyTags) validateParams() error {
 	}
 
 	return nil
-}
-
-// isImageNameValid validates image name without tag and digest.
-// Image name can contain lowercase letters and digits plus separators: dash, period, underscore, slash.
-// Image name cannot start or end with a separator.
-// Image name max length is 128 characters.
-// It's not allowed to have double separator and triple underscore.
-func (c *ApplyTags) isImageNameValid(imageName string) bool {
-	if imageName == "" {
-		return false
-	}
-	if len(imageName) > 128 {
-		return false
-	}
-	if strings.Contains(imageName, "___") ||
-		strings.Contains(imageName, "//") ||
-		strings.Contains(imageName, "..") ||
-		strings.Contains(imageName, "--") ||
-		strings.Contains(imageName, "_.") ||
-		strings.Contains(imageName, "._") ||
-		strings.Contains(imageName, "-.") ||
-		strings.Contains(imageName, ".-") ||
-		strings.Contains(imageName, "-_") ||
-		strings.Contains(imageName, "_-") {
-		return false
-	}
-
-	imagePartPattern := "^[a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?$"
-	imagePartRegex := regexp.MustCompile(imagePartPattern)
-
-	parts := strings.Split(imageName, "/")
-	if len(parts) == 1 {
-		return imagePartRegex.MatchString(parts[0])
-	}
-	// Multiple path parts.
-	// Handle the first part differently, since it might have a port.
-	addressAndPortRegex := regexp.MustCompile(`^([a-z0-9](?:[a-z0-9_.-]*[a-z0-9])?)(?::(\d+))?$`)
-	match := addressAndPortRegex.FindStringSubmatch(parts[0])
-	if len(match) == 0 {
-		return false
-	}
-	if len(match) > 1 {
-		registryAddress := match[1]
-		if !imagePartRegex.MatchString(registryAddress) {
-			// It should never happen if both regex are correct.
-			// Still keeping the check to catch regex editing mistakes.
-			return false
-		}
-	}
-	if len(match) > 2 && match[2] != "" {
-		portString := match[2]
-		if port, err := strconv.Atoi(portString); err == nil {
-			if port < 0 || port > 65535 {
-				return false
-			}
-		} else {
-			return false
-		}
-	}
-	// Validate the rest of the path parts the usual way.
-	for _, part := range parts[1:] {
-		if !imagePartRegex.MatchString(part) {
-			return false
-		}
-	}
-	return true
-}
-
-func (c *ApplyTags) isDigestValid(digest string) bool {
-	digestPattern := `^sha256:[a-f0-9]{64}$`
-	digestRegex := regexp.MustCompile(digestPattern)
-	return digestRegex.MatchString(digest)
-}
-
-// isTagValid validates image tag.
-// Image tag can contain letters and digits plus underscore, period, dash.
-// Image tag cannot start with period or dash.
-// Image tag max length is 128 characters.
-func (c *ApplyTags) isTagValid(tag string) bool {
-	tagPattern := "^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$"
-	tagRegex := regexp.MustCompile(tagPattern)
-	return tagRegex.MatchString(tag)
 }
 
 // isImageLabelNameValid checks if label key for docker image is valid.
