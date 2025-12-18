@@ -82,6 +82,7 @@ func CompileKonfluxCli() error {
 	}
 
 	os.Setenv("CGO_ENABLED", "0")
+	os.Setenv("GOOS", "linux")
 	compileArgs := []string{"build"}
 	if Debug {
 		compileArgs = append(compileArgs, "-gcflags", "all=-N -l")
