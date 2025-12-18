@@ -1,0 +1,56 @@
+kind: Pipeline
+apiVersion: tekton.dev/v1
+metadata:
+  name: konflux-build-cli-unit-tests
+spec:
+  params:
+    - description: 'Snapshot of the application'
+      name: SNAPSHOT
+      type: string
+  tasks:
+    - name: run-unit-tests
+      params:
+        - name: SNAPSHOT
+          value: "$(params.SNAPSHOT)"
+      taskSpec:
+        steps:
+          - name: clone
+            image: quay.io/konflux-ci/task-runner:0.2.0@sha256:ba65585f5c8b0a74dc51590e95961765322427d1d62ccd4eb742ff0442291985
+            env:
+              - name: PARAM_SNAPSHOT
+                value: "$(params.SNAPSHOT)"
+            script: |
+              #!/bin/bash
+              set -ex
+
+              jq -c '.components[0]' >component.json <<< "${PARAM_SNAPSHOT}"
+              git_url=$(jq -r '.source.git.url' <component.json)
+              git_revision=$(jq -r '.source.git.revision' <component.json)
+
+              git clone "$git_url" /source
+              git config --global --add safe.directory /source
+
+              cd /source
+              git checkout "$git_revision"
+            volumeMounts:
+            - name: source
+              mountPath: /source
+          - name: run-tests
+            image: quay.io/konflux-ci/task-runner:0.2.0@sha256:ba65585f5c8b0a74dc51590e95961765322427d1d62ccd4eb742ff0442291985
+            computeResources:
+              requests:
+                memory: 2Gi
+              limits:
+                memory: 2Gi
+            script: |
+              #!/bin/bash
+              set -ex
+              microdnf install -y go
+              cd /source
+              go test ./pkg/...
+            volumeMounts:
+            - name: source
+              mountPath: /source
+        volumes:
+        - name: source
+          emptyDir: {}
