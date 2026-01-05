@@ -2,6 +2,7 @@ package integration_tests_framework
 
 import (
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"testing"
 
 	cliWrappers "github.com/konflux-ci/konflux-build-cli/pkg/cliwrappers"
 	l "github.com/konflux-ci/konflux-build-cli/pkg/logger"
@@ -276,4 +278,15 @@ func PushImage(imageRef string) (string, error) {
 		return string(digest), nil
 	}
 	return "", fmt.Errorf("unknow container tool %s", containerTool)
+}
+
+// Generates a unique container image tag using the test name and a random suffix.
+func GenerateUniqueTag(t *testing.T) string {
+	randomBytes := make([]byte, 4)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		t.Fatalf("Failed to generate random tag: %v", err)
+	}
+	randomSuffix := hex.EncodeToString(randomBytes)
+	return fmt.Sprintf("%s-%s", t.Name(), randomSuffix)
 }
