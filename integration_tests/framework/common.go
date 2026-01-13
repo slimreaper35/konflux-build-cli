@@ -27,7 +27,12 @@ var (
 )
 
 func init() {
-	cliBinPath = path.Join(KonfluxBuildCliCompileDir, KonfluxBuildCli)
+	compileDir, err := filepath.EvalSymlinks(KonfluxBuildCliCompileDir)
+	if err != nil {
+		fmt.Printf("failed to resolve symlinks for %s: %s\n", KonfluxBuildCliCompileDir, err.Error())
+		os.Exit(2)
+	}
+	cliBinPath = path.Join(compileDir, KonfluxBuildCli)
 
 	// Init logger
 	logLevel := "info"
@@ -82,6 +87,7 @@ func CompileKonfluxCli() error {
 	}
 
 	os.Setenv("CGO_ENABLED", "0")
+	os.Setenv("GOOS", "linux")
 	compileArgs := []string{"build"}
 	if Debug {
 		compileArgs = append(compileArgs, "-gcflags", "all=-N -l")
@@ -116,6 +122,13 @@ func EnsureDirectory(dirPath string) error {
 // and returns full path to the creted directory.
 func CreateTempDir(prefix string) (string, error) {
 	tmpDir, err := os.MkdirTemp("", prefix)
+	if err != nil {
+		return "", err
+	}
+	// On macOS, /tmp is a symlink to /private/tmp. The podman machine mount
+	// /private from macOS but not /tmp, so volume mounts using /tmp paths
+	// would look in the VM's own tmp instead of the macOS host.
+	tmpDir, err = filepath.EvalSymlinks(tmpDir)
 	if err != nil {
 		return "", err
 	}

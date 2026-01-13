@@ -3,6 +3,7 @@ package integration_tests_framework
 import (
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -66,9 +67,28 @@ func NewZotRegistry() ImageRegistry {
 		log.Fatal(err)
 	}
 
+	zotRegistryStorageHostDirAbsolutePath, err := filepath.Abs(zotRegistryStorageHostDir)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	if err := EnsureDirectory(zotRegistryStorageHostDirAbsolutePath); err != nil {
+		log.Fatal(err)
+	}
+
+	zotRegistryStorageHostDirAbsolutePath, err = filepath.EvalSymlinks(zotRegistryStorageHostDirAbsolutePath)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	zotRegistryPort := os.Getenv("ZOT_REGISTRY_PORT")
 	if zotRegistryPort == "" {
 		zotRegistryPort = zotRegistryDefaultPort
+	}
+
+	// Validate port is numeric
+	if _, err := strconv.Atoi(zotRegistryPort); err != nil {
+		log.Fatalf("ZOT_REGISTRY_PORT must be a valid port number, got: %s", zotRegistryPort)
 	}
 
 	return &ZotRegistry{
@@ -84,7 +104,7 @@ func NewZotRegistry() ImageRegistry {
 		zotKeyPath:            path.Join(zotConfigDataDirAbsolutePath, zotKeyFileName),
 		zotCertPath:           path.Join(zotConfigDataDirAbsolutePath, zotCertFileName),
 		dockerConfigJsonPath:  path.Join(zotConfigDataDirAbsolutePath, "config.json"),
-		zotRegistryStorageDir: path.Join(zotRegistryStorageHostDir, strconv.FormatInt(time.Now().UnixMilli(), 10)),
+		zotRegistryStorageDir: path.Join(zotRegistryStorageHostDirAbsolutePath, strconv.FormatInt(time.Now().UnixMilli(), 10)),
 	}
 }
 
@@ -436,8 +456,7 @@ func (z *ZotRegistry) ensureZotCaCertInPodmanConfig(executor *cliWrappers.CliExe
 	zotRegistryPodmanCaCertPath := path.Join(zotRegistryPodmanCertsDir, zotRootCertFileName)
 
 	if FileExists(zotRegistryPodmanCaCertPath) {
-		// Check if the cert in Podman config is the same as teh cert in Zot config
-
+		// Check if the cert in Podman config is the same as the cert in Zot config
 		zotCaCertFileStat, err := os.Stat(z.rootCertPath)
 		if err != nil {
 			return fmt.Errorf("failed to stat Zot CA cert file: %w", err)
@@ -458,5 +477,47 @@ func (z *ZotRegistry) ensureZotCaCertInPodmanConfig(executor *cliWrappers.CliExe
 		z.logger.Errorf("failed to copy root CA cert into podman config dir: %s\n%s", stdout, stderr)
 		return err
 	}
+
+	// podman can run inside a podman machine VM
+	if isPodmanMachineRunning(executor) {
+		if err := z.ensureZotCaCertInPodmanMachine(executor); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func isPodmanMachineRunning(executor *cliWrappers.CliExecutor) bool {
+	_, _, exitCode, _ := executor.Execute("podman", "machine", "inspect")
+	return exitCode == 0
+}
+
+// ensureZotCaCertInPodmanMachine copies the CA cert into the podman machine VM
+func (z *ZotRegistry) ensureZotCaCertInPodmanMachine(executor *cliWrappers.CliExecutor) error {
+	vmCertsDir := "/etc/containers/certs.d/" + z.GetRegistryDomain()
+	vmCertPath := vmCertsDir + "/" + zotRootCertFileName
+
+	// Create the directory in the VM
+	if stdout, stderr, _, err := executor.Execute("podman", "machine", "ssh", "sudo", "mkdir", "-p", vmCertsDir); err != nil {
+		z.logger.Errorf("failed to create certs dir in podman machine: %s\n%s", stdout, stderr)
+		return err
+	}
+
+	// Read the cert and encode as base64
+	certContent, err := os.ReadFile(z.rootCertPath)
+	if err != nil {
+		return fmt.Errorf("failed to read CA cert: %w", err)
+	}
+	certBase64 := base64.StdEncoding.EncodeToString(certContent)
+
+	// Use base64 decode in the VM to write the cert
+	sshCmd := fmt.Sprintf("echo '%s' | base64 -d | sudo tee %s > /dev/null", certBase64, vmCertPath)
+	if stdout, stderr, _, err := executor.Execute("podman", "machine", "ssh", sshCmd); err != nil {
+		z.logger.Errorf("failed to copy CA cert into podman machine: %s\n%s", stdout, stderr)
+		return err
+	}
+
+	z.logger.Info("Copied CA cert into podman machine VM")
 	return nil
 }
