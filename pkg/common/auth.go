@@ -1,6 +1,7 @@
 package common
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -111,4 +112,18 @@ func readAuthFile(authFilePath string) (*RegistryAuths, error) {
 	}
 
 	return &registryAuths, nil
+}
+
+func ExtractCredential(token string) (string, string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(token)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to decode token: %w", err)
+	}
+
+	parts := strings.SplitN(string(decoded), ":", 2)
+	if len(parts) != 2 {
+		return "", "", fmt.Errorf("invalid credential format: expected 'username:password'")
+	}
+
+	return parts[0], parts[1], nil
 }

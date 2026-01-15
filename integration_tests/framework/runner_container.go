@@ -301,18 +301,43 @@ func (c *TestRunnerContainer) GetFileContent(path string) (string, error) {
 }
 
 func (c *TestRunnerContainer) ExecuteBuildCli(args ...string) error {
+	return c.ExecuteBuildCliInDir("", args...)
+}
+
+func (c *TestRunnerContainer) ExecuteBuildCliInDir(workDir string, args ...string) error {
+	_, _, err := c.ExecuteBuildCliInDirWithOutput(workDir, args...)
+	return err
+}
+
+func (c *TestRunnerContainer) ExecuteBuildCliInDirWithOutput(workDir string, args ...string) (string, string, error) {
 	if Debug {
-		return c.debugBuildCli(args...)
+		return "", "", c.debugBuildCliInDir(workDir, args...)
 	}
-	return c.ExecuteCommand(KonfluxBuildCli, args...)
+	return c.ExecuteCommandInDirWithOutput(workDir, KonfluxBuildCli, args...)
+}
+
+func (c *TestRunnerContainer) ExecuteCommand(command string, args ...string) error {
+	return c.ExecuteCommandInDir("", command, args...)
+}
+
+func (c *TestRunnerContainer) ExecuteCommandInDir(workDir, command string, args ...string) error {
+	_, _, err := c.ExecuteCommandInDirWithOutput(workDir, command, args...)
+	return err
 }
 
 // ExecuteCommandWithOutput executes a command in the container and returns
 // stdout, stderr, and error.
 func (c *TestRunnerContainer) ExecuteCommandWithOutput(command string, args ...string) (string, string, error) {
+	return c.ExecuteCommandInDirWithOutput("", command, args...)
+}
+
+func (c *TestRunnerContainer) ExecuteCommandInDirWithOutput(workDir, command string, args ...string) (string, string, error) {
 	c.ensureContainerRunning()
-	execArgs := []string{"exec", "-t", c.name}
-	execArgs = append(execArgs, command)
+	execArgs := []string{"exec", "-t"}
+	if workDir != "" {
+		execArgs = append(execArgs, "--workdir", workDir)
+	}
+	execArgs = append(execArgs, c.name, command)
 	execArgs = append(execArgs, args...)
 
 	stdout, stderr, _, err := c.executor.ExecuteWithOutput(containerTool, execArgs...)
@@ -323,12 +348,11 @@ func (c *TestRunnerContainer) ExecuteCommandWithOutput(command string, args ...s
 	return stdout, stderr, err
 }
 
-func (c *TestRunnerContainer) ExecuteCommand(command string, args ...string) error {
-	_, _, err := c.ExecuteCommandWithOutput(command, args...)
-	return err
+func (c *TestRunnerContainer) debugBuildCli(cliArgs ...string) error {
+	return c.debugBuildCliInDir("", cliArgs...)
 }
 
-func (c *TestRunnerContainer) debugBuildCli(cliArgs ...string) error {
+func (c *TestRunnerContainer) debugBuildCliInDir(workDir string, cliArgs ...string) error {
 	c.ensureContainerRunning()
 
 	dlvPath, err := getDlvPath()
@@ -340,8 +364,11 @@ func (c *TestRunnerContainer) debugBuildCli(cliArgs ...string) error {
 		return err
 	}
 
-	execArgs := []string{"exec", "-t", c.name}
-	execArgs = append(execArgs, "dlv", "--listen=0.0.0.0:2345", "--headless=true", "--log=true", "--api-version=2", "exec", "/usr/bin/"+KonfluxBuildCli)
+	execArgs := []string{"exec", "-t"}
+	if workDir != "" {
+		execArgs = append(execArgs, "--workdir", workDir)
+	}
+	execArgs = append(execArgs, c.name, "dlv", "--listen=0.0.0.0:2345", "--headless=true", "--log=true", "--api-version=2", "exec", "/usr/bin/"+KonfluxBuildCli)
 	if len(cliArgs) > 0 {
 		execArgs = append(execArgs, "--")
 		execArgs = append(execArgs, cliArgs...)
@@ -383,6 +410,15 @@ func (c *TestRunnerContainer) GetTaskResultValue(resultFilePath string) (string,
 	return resultValue, nil
 }
 
+func (c *TestRunnerContainer) GetHomeDir() (string, error) {
+	execCmd := []string{"exec", "-t", c.name, "bash", "-c", "echo -n $HOME"}
+	homeDir, _, _, err := c.executor.Execute(containerTool, execCmd...)
+	if err != nil {
+		return "", err
+	}
+	return homeDir, nil
+}
+
 func (c *TestRunnerContainer) InjectDockerAuth(registry, login, password string) error {
 	c.ensureContainerRunning()
 
@@ -397,8 +433,7 @@ func (c *TestRunnerContainer) InjectDockerAuth(registry, login, password string)
 	}
 	defer func() { os.Remove(filePath) }()
 
-	execCmd := []string{"exec", "-t", c.name, "bash", "-c", "echo -n $HOME"}
-	homeDir, _, _, err := c.executor.Execute(containerTool, execCmd...)
+	homeDir, err := c.GetHomeDir()
 	if err != nil {
 		return err
 	}
