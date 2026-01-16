@@ -26,25 +26,19 @@ type AuthEntry struct {
 	Auth string `json:"auth"`
 }
 
-// SelectRegistryAuth selects registry authentication credential from authentication file.
-// It takes an imageRef (container image reference like "registry.io/namespace/image:tag")
-// and an optional authFilePath. If authFilePath is provided and non-empty, it uses that
-// authentication file; otherwise, it defaults to ~/.docker/config.json.
+// SelectRegistryAuth selects registry authentication credential from an authentication file.
+// Arguments:
+//   - imageRef: Image reference like registry.io/namespace/image:tag. It can be an image repository,
+//     or a full reference with either tag, digest or both.
+//   - authFilePath: Path to authentication file.
 // Returns an object of RegistryAuth and an error.
-func SelectRegistryAuth(imageRef string, authFilePath ...string) (*RegistryAuth, error) {
-	var authFile string
-	if len(authFilePath) > 0 && authFilePath[0] != "" {
-		authFile = authFilePath[0]
-	} else {
-		authFile = GetDefaultAuthFile()
-	}
-
+func SelectRegistryAuth(imageRef string, authFilePath string) (*RegistryAuth, error) {
 	imageRepo := GetImageName(imageRef)
 	if imageRepo == "" {
 		return nil, fmt.Errorf("Invalid image reference '%s'", imageRef)
 	}
 
-	registryAuths, err := readAuthFile(authFile)
+	registryAuths, err := readAuthFile(authFilePath)
 	if err != nil {
 		return nil, err
 	}
@@ -58,6 +52,13 @@ func SelectRegistryAuth(imageRef string, authFilePath ...string) (*RegistryAuth,
 		Registry: strings.Split(imageRepo, "/")[0],
 		Token:    token,
 	}, nil
+}
+
+// SelectRegistryAuthFromDefaultAuthFile selects authentication credential from default
+// authentication file ~/.docker/config.json. Refer to SelectRegistryAuth for more details.
+func SelectRegistryAuthFromDefaultAuthFile(imageRef string) (*RegistryAuth, error) {
+	authFile := GetDefaultAuthFile()
+	return SelectRegistryAuth(imageRef, authFile)
 }
 
 // findAuth finds out authentication credential string by image repository.
