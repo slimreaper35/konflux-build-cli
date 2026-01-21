@@ -16,9 +16,9 @@ var executorLog = l.Logger.WithField("logger", "CliExecutor")
 
 type CliExecutorInterface interface {
 	Execute(command string, args ...string) (stdout, stderr string, exitCode int, err error)
-	ExecuteInDir(wordir, command string, args ...string) (stdout, stderr string, exitCode int, err error)
+	ExecuteInDir(workdir, command string, args ...string) (stdout, stderr string, exitCode int, err error)
 	ExecuteWithOutput(command string, args ...string) (stdout, stderr string, exitCode int, err error)
-	ExecuteInDirWithOutput(wordir, command string, args ...string) (stdout, stderr string, exitCode int, err error)
+	ExecuteInDirWithOutput(workdir, command string, args ...string) (stdout, stderr string, exitCode int, err error)
 }
 
 var _ CliExecutorInterface = &CliExecutor{}
@@ -37,10 +37,10 @@ func (e *CliExecutor) Execute(command string, args ...string) (string, string, i
 
 // ExecuteInDir runs specified command in the given directory.
 // Returns stdout, stderr, exit code, error
-func (e *CliExecutor) ExecuteInDir(wordir, command string, args ...string) (string, string, int, error) {
+func (e *CliExecutor) ExecuteInDir(workdir, command string, args ...string) (string, string, int, error) {
 	cmd := exec.Command(command, args...)
-	if wordir != "" {
-		cmd.Dir = wordir
+	if workdir != "" {
+		cmd.Dir = workdir
 	}
 
 	var stdoutBuf, stderrBuf bytes.Buffer
