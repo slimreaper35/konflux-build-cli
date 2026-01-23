@@ -33,30 +33,6 @@ func writeFile(t *testing.T, path string, content []byte) {
 
 func TestSearchDockerfileErrorOnEscapingFromSource(t *testing.T) {
 	testCases := []TestCase{
-		// Tests Dockerfile is escaped by source directory
-		// Directory structure:
-		// /tmp/workspace/source/ links to /tmp/escaped/
-		// Search /tmp/workspace/source/Dockerfile
-		{
-			name: "escaped from source directory",
-			searchOpts: DockerfileSearchOpts{
-				SourceDir:  "delay to setup",
-				ContextDir: ".",
-				Dockerfile: "./Dockerfile",
-			},
-			setup: func(t *testing.T, tc *TestCase) {
-				workDir := t.TempDir()
-				// source links to this target outside of the base path.
-				escapedDir := createDir(t, workDir, "escaped")
-				writeFile(t, filepath.Join(escapedDir, "Dockerfile"), dockerfileContent)
-				// Link sourceDir to escapedDir
-				linkName := filepath.Join(workDir, "source")
-				if err := os.Symlink(escapedDir, linkName); err != nil {
-					t.Fatalf("Failed to create symlink: %v", err)
-				}
-				tc.searchOpts.SourceDir = linkName
-			},
-		},
 		// Tests Dockerfile is escaped by context directory
 		// Directory structure:
 		// /tmp/workspace/source/dockerfiles(context)/ links to /tmp/workspace/escaped/
@@ -271,6 +247,29 @@ func TestSearchDockerfile(t *testing.T) {
 			},
 			expectedDockerfile: "/Dockerfile",
 		},
+		{
+			name: "Ignore symlink source directory",
+			searchOpts: DockerfileSearchOpts{
+				SourceDir:  "delay to setup",
+				ContextDir: ".",
+				Dockerfile: "./Dockerfile",
+			},
+			setup: func(t *testing.T, tc *TestCase) {
+				// Directory structure:
+				// /workdir/outside/
+				// /workdir/source/, links to /workdir/outside/
+				workDir := t.TempDir()
+				outsideDir := createDir(t, workDir, "outside")
+				writeFile(t, filepath.Join(outsideDir, "Dockerfile"), dockerfileContent)
+				// Link source to outside
+				linkName := filepath.Join(workDir, "source")
+				if err := os.Symlink(outsideDir, linkName); err != nil {
+					t.Fatalf("Failed to create symlink: %v", err)
+				}
+				tc.searchOpts.SourceDir = linkName
+			},
+			expectedDockerfile: "/Dockerfile",
+		},
 	}
 
 	for _, tc := range testCases {
@@ -281,10 +280,16 @@ func TestSearchDockerfile(t *testing.T) {
 			if err != nil {
 				t.Errorf("Unexpected error: %v", err)
 			}
-			expected := tc.expectedDockerfile
-			relativePath := strings.TrimPrefix(result, tc.searchOpts.SourceDir)
-			if relativePath != expected {
-				t.Errorf("Expected getting Dockerfile %s, but got: '%s'", expected, relativePath)
+			if tc.name == "Ignore symlink source directory" {
+				if !strings.HasSuffix(result, "/outside/Dockerfile") {
+					t.Errorf("Expected getting Dockerfile from outside/ directroy, but got: '%s'", result)
+				}
+			} else {
+				relativePath := strings.TrimPrefix(result, tc.searchOpts.SourceDir)
+				expected := tc.expectedDockerfile
+				if relativePath != expected {
+					t.Errorf("Expected getting Dockerfile %s, but got: '%s'", expected, relativePath)
+				}
 			}
 		})
 	}
