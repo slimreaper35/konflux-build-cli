@@ -309,3 +309,48 @@ func TestSearchDockerfile(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchDockerfileSourceIsRelativePath(t *testing.T) {
+	workDir := t.TempDir()
+	sourceDir := createDir(t, workDir, "source")
+	writeFile(t, filepath.Join(sourceDir, "Dockerfile"), dockerfileContent)
+
+	curDir, err := os.Getwd()
+	if err != nil {
+		t.Errorf("Error on creating a temporary directory: %v", err)
+	}
+	os.Chdir(workDir)
+	defer os.Chdir(curDir)
+
+	searchOpts := DockerfileSearchOpts{
+		SourceDir:  "source",
+		ContextDir: ".",
+		Dockerfile: "./Dockerfile",
+	}
+
+	result, err := SearchDockerfile(searchOpts)
+	if err != nil {
+		t.Errorf("Unexpected error: %v", err)
+	}
+	expected := "source/Dockerfile"
+	if result != expected {
+		t.Errorf("Expected %s, but got %s", expected, result)
+	}
+}
+
+func TestSearchDockerfileSourceIsRelativePathButNotChdir(t *testing.T) {
+	workDir := t.TempDir()
+	sourceDir := createDir(t, workDir, "source")
+	writeFile(t, filepath.Join(sourceDir, "Dockerfile"), dockerfileContent)
+
+	searchOpts := DockerfileSearchOpts{
+		SourceDir:  "source",
+		ContextDir: ".",
+		Dockerfile: "./Dockerfile",
+	}
+
+	result, err := SearchDockerfile(searchOpts)
+	if err == nil {
+		t.Errorf("Search is expected to fail, but no error is returned and result is: %s", result)
+	}
+}
