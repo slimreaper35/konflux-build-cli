@@ -2,8 +2,10 @@ package integration_tests
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,7 +14,43 @@ import (
 	. "github.com/konflux-ci/konflux-build-cli/integration_tests/framework"
 )
 
-const BuildImage = "quay.io/konflux-ci/buildah-task:latest@sha256:5c5eb4117983b324f932f144aa2c2df7ed508174928a423d8551c4e11f30fbd9"
+const (
+	BuildImage = "quay.io/konflux-ci/buildah-task:latest@sha256:5c5eb4117983b324f932f144aa2c2df7ed508174928a423d8551c4e11f30fbd9"
+	// Tests that need a real base image should try to use the same one when possible
+	// (to reduce the time spent pulling base images)
+	baseImage = "registry.access.redhat.com/ubi10/ubi-micro:10.1@sha256:2946fa1b951addbcd548ef59193dc0af9b3e9fedb0287b4ddb6e697b06581622"
+)
+
+// Set in init()
+var containerStoragePath = ""
+
+// Set up a directory to mount as /var/lib/containers into the test runner container.
+// For each test run, use a newly created directory under /tmp/kbc-image-build-tests.
+// Always try to clean up /tmp/kbc-image-build-tests first.
+func init() {
+	containerStorageBase := filepath.Join(os.TempDir(), "kbc-image-build-tests")
+
+	// Try to clean up the parent storage dir
+	// 1. 'chmod -R' to ensure write permissions (container storage often includes read-only files)
+	filepath.WalkDir(containerStorageBase, func(path string, d fs.DirEntry, err error) error {
+		// Ignore errors, try to chmod everything if possible
+		os.Chmod(path, 0777)
+		return nil
+	})
+	// 2. 'rm -r'
+	os.RemoveAll(containerStorageBase)
+
+	// (Re-)create the parent storage dir
+	err := os.Mkdir(containerStorageBase, 0755)
+	if err != nil {
+		panic(err)
+	}
+	// Create a subdirectory for this test run
+	containerStoragePath, err = os.MkdirTemp(containerStorageBase, "container-storage-*")
+	if err != nil {
+		panic(err)
+	}
+}
 
 type BuildParams struct {
 	Context       string
@@ -41,6 +79,7 @@ func RunBuild(buildParams BuildParams, imageRegistry ImageRegistry) error {
 func setupBuildContainer(buildParams BuildParams, imageRegistry ImageRegistry) (*TestRunnerContainer, error) {
 	container := NewBuildCliRunnerContainer("kbc-build", BuildImage)
 	container.AddVolumeWithOptions(buildParams.Context, "/workspace", "z")
+	container.AddVolumeWithOptions(containerStoragePath, "/var/lib/containers", "z")
 
 	if imageRegistry != nil && imageRegistry.IsLocal() {
 		container.AddVolumeWithOptions(imageRegistry.GetCaCertPath(), "/etc/pki/tls/certs/ca-custom-bundle.crt", "z")
@@ -234,4 +273,31 @@ LABEL test.label="extra-args-test"
 	// Verify that the logfile was created
 	err = container.ExecuteCommand("test", "-f", "/tmp/kbc-build.log")
 	Expect(err).ToNot(HaveOccurred(), "Expected /tmp/kbc-build.log to exist")
+}
+
+// Verify that a simple build with a RUN instruction passes
+func TestBuild_UsesRunInstruction(t *testing.T) {
+	setupGomega(t)
+
+	contextDir := setupTestContext(t)
+	writeContainerfile(contextDir, fmt.Sprintf(`
+FROM %s
+RUN echo hi
+`, baseImage))
+
+	outputRef := "localhost/test-image:" + GenerateUniqueTag(t)
+
+	buildParams := BuildParams{
+		Context:   contextDir,
+		OutputRef: outputRef,
+		Push:      false,
+	}
+
+	container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+	err := runBuild(container, buildParams)
+	Expect(err).ToNot(HaveOccurred())
+
+	err = container.ExecuteCommand("buildah", "images", outputRef)
+	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
 }
