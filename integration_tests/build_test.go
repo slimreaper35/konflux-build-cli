@@ -22,43 +22,6 @@ const (
 	baseImage = "registry.access.redhat.com/ubi10/ubi-micro:10.1@sha256:2946fa1b951addbcd548ef59193dc0af9b3e9fedb0287b4ddb6e697b06581622"
 )
 
-// Set in init()
-var containerStoragePath = ""
-
-// Set up a directory to mount as /var/lib/containers into the test runner container.
-// For each test run, use a newly created directory under /tmp/kbc-image-build-tests.
-// Always try to clean up /tmp/kbc-image-build-tests first.
-func init() {
-	// On macOS, containers run in a Linux VM; overlay storage driver
-	// doesn't work reliably with host volume mounts through the VM
-	if runtime.GOOS == "darwin" {
-		return
-	}
-
-	containerStorageBase := filepath.Join(os.TempDir(), "kbc-image-build-tests")
-
-	// Try to clean up the parent storage dir
-	// 1. 'chmod -R' to ensure write permissions (container storage often includes read-only files)
-	filepath.WalkDir(containerStorageBase, func(path string, d fs.DirEntry, err error) error {
-		// Ignore errors, try to chmod everything if possible
-		os.Chmod(path, 0777)
-		return nil
-	})
-	// 2. 'rm -r'
-	os.RemoveAll(containerStorageBase)
-
-	// (Re-)create the parent storage dir
-	err := os.Mkdir(containerStorageBase, 0755)
-	if err != nil {
-		panic(err)
-	}
-	// Create a subdirectory for this test run
-	containerStoragePath, err = os.MkdirTemp(containerStorageBase, "container-storage-*")
-	if err != nil {
-		panic(err)
-	}
-}
-
 type BuildParams struct {
 	Context       string
 	Containerfile string
@@ -69,27 +32,52 @@ type BuildParams struct {
 
 // Public interface for parity with ApplyTags. Not used in these tests directly.
 func RunBuild(buildParams BuildParams, imageRegistry ImageRegistry) error {
-	container, err := setupBuildContainer(buildParams, imageRegistry)
+	opts := []ContainerOption{}
+	// On macOS, containers run in a Linux VM; overlay storage driver
+	// doesn't work reliably with host volume mounts through the VM
+	if runtime.GOOS != "darwin" {
+		containerStoragePath, err := CreateTempDir("kbc-containers-storage-")
+		if err != nil {
+			return err
+		}
+		defer removeContainerStorageDir(containerStoragePath)
+		opts = append(opts, WithVolumeWithOptions(containerStoragePath, "/var/lib/containers", "z"))
+	}
+
+	container, err := setupBuildContainer(
+		buildParams,
+		imageRegistry,
+		opts...,
+	)
 	if container != nil {
 		defer container.Delete()
 	}
 	if err != nil {
 		return err
 	}
+
 	return runBuild(container, buildParams)
+}
+
+// Remove a directory that was mounted as /var/lib/containers into a test runner container
+func removeContainerStorageDir(containerStoragePath string) error {
+	// 1. 'chmod -R' to ensure write permissions (container storage often includes read-only files)
+	filepath.WalkDir(containerStoragePath, func(path string, d fs.DirEntry, err error) error {
+		// Ignore errors, try to chmod everything if possible
+		os.Chmod(path, 0777)
+		return nil
+	})
+	// 2. 'rm -r'
+	return os.RemoveAll(containerStoragePath)
 }
 
 // Creates and starts a container for running builds.
 // The caller is responsible for cleaning up the container.
 // May return a non-nil container even if an error occurs. In that case, the caller
 // should clean up the container before failing.
-func setupBuildContainer(buildParams BuildParams, imageRegistry ImageRegistry) (*TestRunnerContainer, error) {
-	container := NewBuildCliRunnerContainer("kbc-build", BuildImage)
+func setupBuildContainer(buildParams BuildParams, imageRegistry ImageRegistry, opts ...ContainerOption) (*TestRunnerContainer, error) {
+	container := NewBuildCliRunnerContainer("kbc-build", BuildImage, opts...)
 	container.AddVolumeWithOptions(buildParams.Context, "/workspace", "z")
-	// Skip on macOS - see init function comment
-	if runtime.GOOS != "darwin" {
-		container.AddVolumeWithOptions(containerStoragePath, "/var/lib/containers", "z")
-	}
 
 	if imageRegistry != nil && imageRegistry.IsLocal() {
 		container.AddVolumeWithOptions(imageRegistry.GetCaCertPath(), "/etc/pki/tls/certs/ca-custom-bundle.crt", "z")
@@ -139,18 +127,6 @@ func runBuild(container *TestRunnerContainer, buildParams BuildParams) error {
 	return nil
 }
 
-// Creates a build container and registers cleanup.
-func setupBuildContainerWithCleanup(t *testing.T, buildParams BuildParams, imageRegistry ImageRegistry) *TestRunnerContainer {
-	container, err := setupBuildContainer(buildParams, imageRegistry)
-	t.Cleanup(func() {
-		if container != nil {
-			container.Delete()
-		}
-	})
-	Expect(err).ToNot(HaveOccurred())
-	return container
-}
-
 // Creates a temporary directory for the test and registers cleanup.
 func setupTestContext(t *testing.T) string {
 	contextDir, err := CreateTempDir("build-test-context-")
@@ -182,124 +158,140 @@ func writeContainerfile(contextDir, content string) {
 	Expect(err).ToNot(HaveOccurred())
 }
 
-func TestBuild_BuildOnly(t *testing.T) {
+func TestBuild(t *testing.T) {
 	SetupGomega(t)
 
-	contextDir := setupTestContext(t)
-	writeContainerfile(contextDir, `
+	commonOpts := []ContainerOption{}
+	// On macOS, containers run in a Linux VM; overlay storage driver
+	// doesn't work reliably with host volume mounts through the VM
+	if runtime.GOOS != "darwin" {
+		containerStoragePath := t.TempDir()
+		t.Cleanup(func() { removeContainerStorageDir(containerStoragePath) })
+		commonOpts = append(commonOpts, WithVolumeWithOptions(containerStoragePath, "/var/lib/containers", "z"))
+	}
+
+	// Creates a build container and registers cleanup.
+	setupBuildContainerWithCleanup := func(t *testing.T, buildParams BuildParams, imageRegistry ImageRegistry) *TestRunnerContainer {
+		container, err := setupBuildContainer(buildParams, imageRegistry, commonOpts...)
+		t.Cleanup(func() {
+			if container != nil {
+				container.Delete()
+			}
+		})
+		Expect(err).ToNot(HaveOccurred())
+		return container
+	}
+
+	t.Run("BuildOnly", func(t *testing.T) {
+		contextDir := setupTestContext(t)
+		writeContainerfile(contextDir, `
 FROM scratch
 LABEL test.label="build-test"
 `)
 
-	outputRef := "localhost/test-image:" + GenerateUniqueTag(t)
+		outputRef := "localhost/test-image:" + GenerateUniqueTag(t)
 
-	buildParams := BuildParams{
-		Context:   contextDir,
-		OutputRef: outputRef,
-		Push:      false,
-	}
+		buildParams := BuildParams{
+			Context:   contextDir,
+			OutputRef: outputRef,
+			Push:      false,
+		}
 
-	container := setupBuildContainerWithCleanup(t, buildParams, nil)
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
 
-	// Run build without pushing
-	err := runBuild(container, buildParams)
-	Expect(err).ToNot(HaveOccurred())
+		// Run build without pushing
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
 
-	// Verify the image exists in buildah's local storage
-	err = container.ExecuteCommand("buildah", "images", outputRef)
-	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
-}
+		// Verify the image exists in buildah's local storage
+		err = container.ExecuteCommand("buildah", "images", outputRef)
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
+	})
 
-func TestBuild_BuildAndPush(t *testing.T) {
-	SetupGomega(t)
+	t.Run("BuildAndPush", func(t *testing.T) {
+		imageRegistry := setupImageRegistry(t)
 
-	imageRegistry := setupImageRegistry(t)
-
-	contextDir := setupTestContext(t)
-	writeContainerfile(contextDir, fmt.Sprintf(`
+		contextDir := setupTestContext(t)
+		writeContainerfile(contextDir, fmt.Sprintf(`
 FROM scratch
 LABEL test.label="build-and-push-test"
 LABEL %s="1h"
 `, QuayExpiresAfterLabelName))
 
-	imageRepoUrl := imageRegistry.GetTestNamespace() + "build-test-image"
-	outputRef := imageRepoUrl + ":" + GenerateUniqueTag(t)
+		imageRepoUrl := imageRegistry.GetTestNamespace() + "build-test-image"
+		outputRef := imageRepoUrl + ":" + GenerateUniqueTag(t)
 
-	buildParams := BuildParams{
-		Context:   contextDir,
-		OutputRef: outputRef,
-		Push:      true,
-	}
+		buildParams := BuildParams{
+			Context:   contextDir,
+			OutputRef: outputRef,
+			Push:      true,
+		}
 
-	container := setupBuildContainerWithCleanup(t, buildParams, imageRegistry)
+		container := setupBuildContainerWithCleanup(t, buildParams, imageRegistry)
 
-	err := runBuild(container, buildParams)
-	Expect(err).ToNot(HaveOccurred())
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
 
-	lastColon := strings.LastIndex(outputRef, ":")
-	tag := outputRef[lastColon+1:]
+		lastColon := strings.LastIndex(outputRef, ":")
+		tag := outputRef[lastColon+1:]
 
-	tagExists, err := imageRegistry.CheckTagExistance(imageRepoUrl, tag)
-	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("failed to check for %s tag existence", tag))
-	Expect(tagExists).To(BeTrue(), fmt.Sprintf("Expected %s to exist in registry", outputRef))
-}
+		tagExists, err := imageRegistry.CheckTagExistance(imageRepoUrl, tag)
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("failed to check for %s tag existence", tag))
+		Expect(tagExists).To(BeTrue(), fmt.Sprintf("Expected %s to exist in registry", outputRef))
+	})
 
-func TestBuild_WithExtraArgs(t *testing.T) {
-	SetupGomega(t)
+	t.Run("WithExtraArgs", func(t *testing.T) {
+		contextDir := setupTestContext(t)
 
-	contextDir := setupTestContext(t)
-
-	writeContainerfile(contextDir, `
+		writeContainerfile(contextDir, `
 FROM scratch
 LABEL test.label="extra-args-test"
 `)
 
-	outputRef := "localhost/test-image-extra-args:" + GenerateUniqueTag(t)
+		outputRef := "localhost/test-image-extra-args:" + GenerateUniqueTag(t)
 
-	buildParams := BuildParams{
-		Context:   contextDir,
-		OutputRef: outputRef,
-		Push:      false,
-		ExtraArgs: []string{"--logfile", "/tmp/kbc-build.log"},
-	}
+		buildParams := BuildParams{
+			Context:   contextDir,
+			OutputRef: outputRef,
+			Push:      false,
+			ExtraArgs: []string{"--logfile", "/tmp/kbc-build.log"},
+		}
 
-	container := setupBuildContainerWithCleanup(t, buildParams, nil)
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
 
-	err := runBuild(container, buildParams)
-	Expect(err).ToNot(HaveOccurred())
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
 
-	// Verify the image exists in buildah's local storage
-	err = container.ExecuteCommand("buildah", "images", outputRef)
-	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
+		// Verify the image exists in buildah's local storage
+		err = container.ExecuteCommand("buildah", "images", outputRef)
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
 
-	// Verify that the logfile was created
-	err = container.ExecuteCommand("test", "-f", "/tmp/kbc-build.log")
-	Expect(err).ToNot(HaveOccurred(), "Expected /tmp/kbc-build.log to exist")
-}
+		// Verify that the logfile was created
+		err = container.ExecuteCommand("test", "-f", "/tmp/kbc-build.log")
+		Expect(err).ToNot(HaveOccurred(), "Expected /tmp/kbc-build.log to exist")
+	})
 
-// Verify that a simple build with a RUN instruction passes
-func TestBuild_UsesRunInstruction(t *testing.T) {
-	SetupGomega(t)
-
-	contextDir := setupTestContext(t)
-	writeContainerfile(contextDir, fmt.Sprintf(`
+	t.Run("UsesRunInstruction", func(t *testing.T) {
+		contextDir := setupTestContext(t)
+		writeContainerfile(contextDir, fmt.Sprintf(`
 FROM %s
 RUN echo hi
 `, baseImage))
 
-	outputRef := "localhost/test-image:" + GenerateUniqueTag(t)
+		outputRef := "localhost/test-image:" + GenerateUniqueTag(t)
 
-	buildParams := BuildParams{
-		Context:   contextDir,
-		OutputRef: outputRef,
-		Push:      false,
-	}
+		buildParams := BuildParams{
+			Context:   contextDir,
+			OutputRef: outputRef,
+			Push:      false,
+		}
 
-	container := setupBuildContainerWithCleanup(t, buildParams, nil)
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
 
-	err := runBuild(container, buildParams)
-	Expect(err).ToNot(HaveOccurred())
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
 
-	err = container.ExecuteCommand("buildah", "images", outputRef)
-	Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
+		err = container.ExecuteCommand("buildah", "images", outputRef)
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
+	})
 }

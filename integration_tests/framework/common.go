@@ -290,7 +290,9 @@ func GenerateUniqueTag(t *testing.T) string {
 		t.Fatalf("Failed to generate random tag: %v", err)
 	}
 	randomSuffix := hex.EncodeToString(randomBytes)
-	return fmt.Sprintf("%s-%s", t.Name(), randomSuffix)
+	// Replace slashes with hyphens to make the tag valid for subtests
+	testName := strings.ReplaceAll(t.Name(), "/", "-")
+	return fmt.Sprintf("%s-%s", testName, randomSuffix)
 }
 
 // Registers the Gomega failure handler for the test.
