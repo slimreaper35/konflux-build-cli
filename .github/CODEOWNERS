@@ -1,3 +1,6 @@
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
 
 *   @konflux-ci/build-maintainers
+
+/pkg/cliwrappers/hermeto.go                @a-ovchinnikov @eskultety @slimreaper35 @taylormadore
+/pkg/cliwrappers/hermeto_test.go           @a-ovchinnikov @eskultety @slimreaper35 @taylormadore
