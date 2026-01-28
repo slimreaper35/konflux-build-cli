@@ -73,7 +73,7 @@ func (b *BuildahCli) Build(args *BuildahBuildArgs) error {
 }
 
 type BuildahPushArgs struct {
-	Image string
+	Image       string
 	Destination string
 }
 
