@@ -6,6 +6,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -28,6 +29,12 @@ var containerStoragePath = ""
 // For each test run, use a newly created directory under /tmp/kbc-image-build-tests.
 // Always try to clean up /tmp/kbc-image-build-tests first.
 func init() {
+	// On macOS, containers run in a Linux VM; overlay storage driver
+	// doesn't work reliably with host volume mounts through the VM
+	if runtime.GOOS == "darwin" {
+		return
+	}
+
 	containerStorageBase := filepath.Join(os.TempDir(), "kbc-image-build-tests")
 
 	// Try to clean up the parent storage dir
@@ -79,7 +86,10 @@ func RunBuild(buildParams BuildParams, imageRegistry ImageRegistry) error {
 func setupBuildContainer(buildParams BuildParams, imageRegistry ImageRegistry) (*TestRunnerContainer, error) {
 	container := NewBuildCliRunnerContainer("kbc-build", BuildImage)
 	container.AddVolumeWithOptions(buildParams.Context, "/workspace", "z")
-	container.AddVolumeWithOptions(containerStoragePath, "/var/lib/containers", "z")
+	// Skip on macOS - see init function comment
+	if runtime.GOOS != "darwin" {
+		container.AddVolumeWithOptions(containerStoragePath, "/var/lib/containers", "z")
+	}
 
 	if imageRegistry != nil && imageRegistry.IsLocal() {
 		container.AddVolumeWithOptions(imageRegistry.GetCaCertPath(), "/etc/pki/tls/certs/ca-custom-bundle.crt", "z")
