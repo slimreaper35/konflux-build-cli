@@ -5,6 +5,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime"
 	"strings"
 
 	cliWrappers "github.com/konflux-ci/konflux-build-cli/pkg/cliwrappers"
@@ -66,6 +67,11 @@ func NewBuildCliRunnerContainer(name, image string) *TestRunnerContainer {
 		container.AddPort("2345", "2345")
 	}
 	container.AddEnv("KBC_LOG_LEVEL", "debug")
+	// On macOS, containers run in a Linux VM; overlay storage driver
+	// doesn't work reliably with host volume mounts through the VM
+	if runtime.GOOS == "darwin" {
+		container.AddEnv("STORAGE_DRIVER", "vfs")
+	}
 
 	return container
 }
