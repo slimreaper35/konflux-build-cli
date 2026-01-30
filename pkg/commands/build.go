@@ -81,6 +81,7 @@ type Build struct {
 	ResultsWriter common.ResultsWriterInterface
 
 	containerfilePath string
+	buildahSecrets    []cliWrappers.BuildahSecret
 }
 
 func NewBuild(cmd *cobra.Command, extraArgs []string) (*Build, error) {
@@ -225,11 +226,11 @@ func (c *Build) setSecretArgs() error {
 	if err != nil {
 		return fmt.Errorf("parsing --secret-dirs: %w", err)
 	}
-	secretArgs, err := c.processSecretDirs(secretDirs)
+	buildahSecrets, err := c.processSecretDirs(secretDirs)
 	if err != nil {
 		return fmt.Errorf("processing --secret-dirs: %w", err)
 	}
-	c.Params.ExtraArgs = append(c.Params.ExtraArgs, secretArgs...)
+	c.buildahSecrets = buildahSecrets
 	return nil
 }
 
@@ -282,8 +283,8 @@ func parseSecretDirs(secretDirArgs []string) ([]secretDir, error) {
 }
 
 // processSecretDirs processes secret directories and returns buildah --secret arguments.
-func (c *Build) processSecretDirs(secretDirs []secretDir) ([]string, error) {
-	var secretArgs []string
+func (c *Build) processSecretDirs(secretDirs []secretDir) ([]cliWrappers.BuildahSecret, error) {
+	var buildahSecrets []cliWrappers.BuildahSecret
 	usedIDs := make(map[string]bool)
 
 	for _, secretDir := range secretDirs {
@@ -320,13 +321,15 @@ func (c *Build) processSecretDirs(secretDirs []secretDir) ([]string, error) {
 			usedIDs[fullID] = true
 
 			secretPath := filepath.Join(secretDir.src, filename)
-			secretArgs = append(secretArgs, fmt.Sprintf("--secret=id=%s,src=%s", fullID, secretPath))
+			buildahSecrets = append(
+				buildahSecrets, cliWrappers.BuildahSecret{Src: secretPath, Id: fullID},
+			)
 
 			l.Logger.Infof("Adding secret %s to the build, available with 'RUN --mount=type=secret,id=%s'", fullID, fullID)
 		}
 	}
 
-	return secretArgs, nil
+	return buildahSecrets, nil
 }
 
 func isRegular(entry os.DirEntry, dir string) (bool, error) {
@@ -352,6 +355,7 @@ func (c *Build) buildImage() error {
 		Containerfile: c.containerfilePath,
 		ContextDir:    c.Params.Context,
 		OutputRef:     c.Params.OutputRef,
+		Secrets:       c.buildahSecrets,
 		ExtraArgs:     c.Params.ExtraArgs,
 	}
 
