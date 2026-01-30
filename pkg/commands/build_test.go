@@ -679,4 +679,56 @@ func Test_Build_Run(t *testing.T) {
 		g.Expect(err.Error()).To(ContainSubstring("failed to create results json"))
 		g.Expect(isCreateResultJsonCalled).To(BeTrue())
 	})
+
+	t.Run("should run buildah inside context directory with absolute paths", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"Containerfile":   "FROM scratch",
+			"context/main.go": "package main",
+			"secrets/token":   "secret-token",
+		})
+
+		originalCwd, _ := os.Getwd()
+		os.Chdir(tempDir)
+		defer os.Chdir(originalCwd)
+
+		_mockBuildahCli := &mockBuildahCli{}
+		_mockResultsWriter := &mockResultsWriter{}
+		c := &Build{
+			CliWrappers: BuildCliWrappers{BuildahCli: _mockBuildahCli},
+			Params: &BuildParams{
+				OutputRef:     "quay.io/org/image:tag",
+				Containerfile: "Containerfile",
+				Context:       "context",
+				SecretDirs:    []string{"secrets"},
+			},
+			ResultsWriter: _mockResultsWriter,
+		}
+
+		expectedContextDir := filepath.Join(tempDir, "context")
+		expectedContainerfile := filepath.Join(tempDir, "Containerfile")
+		expectedSecretSrc := filepath.Join(tempDir, "secrets/token")
+
+		_mockBuildahCli.BuildFunc = func(args *cliwrappers.BuildahBuildArgs) error {
+			currentDir, err := os.Getwd()
+			g.Expect(err).ToNot(HaveOccurred())
+
+			// Check that the buildah build happens inside the contextDir
+			g.Expect(currentDir).To(Equal(expectedContextDir))
+
+			g.Expect(args.Containerfile).To(Equal(expectedContainerfile))
+			g.Expect(args.ContextDir).To(Equal(expectedContextDir))
+			g.Expect(args.Secrets).To(HaveLen(1))
+			g.Expect(args.Secrets[0].Src).To(Equal(expectedSecretSrc))
+
+			return nil
+		}
+
+		err := c.Run()
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Check that the Run() function restored the cwd on exit
+		restoredDir, _ := os.Getwd()
+		g.Expect(restoredDir).To(Equal(tempDir))
+	})
 }

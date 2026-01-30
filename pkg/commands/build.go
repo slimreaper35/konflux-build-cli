@@ -351,12 +351,24 @@ func isRegular(entry os.DirEntry, dir string) (bool, error) {
 func (c *Build) buildImage() error {
 	l.Logger.Info("Building container image...")
 
+	originalCwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	if err := os.Chdir(c.Params.Context); err != nil {
+		return fmt.Errorf("couldn't cd to context directory: %w", err)
+	}
+	defer os.Chdir(originalCwd)
+
 	buildArgs := &cliWrappers.BuildahBuildArgs{
 		Containerfile: c.containerfilePath,
 		ContextDir:    c.Params.Context,
 		OutputRef:     c.Params.OutputRef,
 		Secrets:       c.buildahSecrets,
 		ExtraArgs:     c.Params.ExtraArgs,
+	}
+	if err := buildArgs.MakePathsAbsolute(originalCwd); err != nil {
+		return err
 	}
 
 	if err := c.CliWrappers.BuildahCli.Build(buildArgs); err != nil {
