@@ -13,6 +13,7 @@ import (
 	. "github.com/onsi/gomega"
 
 	. "github.com/konflux-ci/konflux-build-cli/integration_tests/framework"
+	"github.com/konflux-ci/konflux-build-cli/testutil"
 )
 
 const (
@@ -27,6 +28,7 @@ type BuildParams struct {
 	Containerfile string
 	OutputRef     string
 	Push          bool
+	SecretDirs    []string
 	ExtraArgs     []string
 }
 
@@ -120,8 +122,12 @@ func setupBuildContainer(buildParams BuildParams, imageRegistry ImageRegistry, o
 
 // Executes the build command in the provided container.
 func runBuild(container *TestRunnerContainer, buildParams BuildParams) error {
-	var err error
+	_, _, err := runBuildWithOutput(container, buildParams)
+	return err
+}
 
+// Executes the build command and returns stdout, stderr, and error.
+func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams) (string, string, error) {
 	// Construct the build arguments
 	args := []string{"image", "build"}
 	args = append(args, "-t", buildParams.OutputRef)
@@ -132,18 +138,18 @@ func runBuild(container *TestRunnerContainer, buildParams BuildParams) error {
 	if buildParams.Push {
 		args = append(args, "--push")
 	}
+	// Add secret directories if provided
+	if len(buildParams.SecretDirs) > 0 {
+		args = append(args, "--secret-dirs")
+		args = append(args, buildParams.SecretDirs...)
+	}
 	// Add separator and extra args if provided
 	if len(buildParams.ExtraArgs) > 0 {
 		args = append(args, "--")
 		args = append(args, buildParams.ExtraArgs...)
 	}
 
-	err = container.ExecuteBuildCli(args...)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	return container.ExecuteCommandWithOutput(KonfluxBuildCli, args...)
 }
 
 // Creates a temporary directory for the test and registers cleanup.
@@ -190,9 +196,11 @@ func TestBuild(t *testing.T) {
 		commonOpts = append(commonOpts, WithVolumeWithOptions(containerStoragePath, "/var/lib/containers", "z"))
 	}
 
-	// Creates a build container and registers cleanup.
-	setupBuildContainerWithCleanup := func(t *testing.T, buildParams BuildParams, imageRegistry ImageRegistry) *TestRunnerContainer {
-		container, err := setupBuildContainer(buildParams, imageRegistry, commonOpts...)
+	setupBuildContainerWithCleanup := func(
+		t *testing.T, buildParams BuildParams, imageRegistry ImageRegistry, opts ...ContainerOption,
+	) *TestRunnerContainer {
+		opts = append(commonOpts, opts...)
+		container, err := setupBuildContainer(buildParams, imageRegistry, opts...)
 		t.Cleanup(func() { container.DeleteIfExists() })
 		Expect(err).ToNot(HaveOccurred())
 		return container
@@ -307,6 +315,68 @@ RUN echo hi
 		err := runBuild(container, buildParams)
 		Expect(err).ToNot(HaveOccurred())
 
+		err = container.ExecuteCommand("buildah", "images", outputRef)
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
+	})
+
+	t.Run("WithSecretDirs", func(t *testing.T) {
+		secretsBaseDir := t.TempDir()
+		testutil.WriteFileTree(t, secretsBaseDir, map[string]string{
+			"secret1/token":   "secret-token-value",
+			"secret1/api-key": "secret-api-key-value",
+			// secret2/password: symlink to ..data/password (similar to Kubernetes secret volumes)
+			"secret2/..data/password": "secret-password-value",
+		})
+		err := os.Symlink("..data/password", filepath.Join(secretsBaseDir, "secret2/password"))
+		Expect(err).ToNot(HaveOccurred())
+
+		secretDirs := []string{
+			// Should be accessible with IDs secret1_alias/*
+			"src=/secrets/secret1,name=secret1_alias",
+			// Should be accessible with IDs secret2/*
+			"/secrets/secret2",
+			// Should be ignored
+			"src=/secrets/nonexistent,optional=true",
+		}
+
+		contextDir := setupTestContext(t)
+		writeContainerfile(contextDir, fmt.Sprintf(`
+FROM %s
+
+# Test that secrets are accessible during build
+RUN --mount=type=secret,id=secret1_alias/token \
+    --mount=type=secret,id=secret1_alias/api-key \
+    --mount=type=secret,id=secret2/password \
+    echo "token=$(cat /run/secrets/secret1_alias/token)" && \
+    echo "api-key=$(cat /run/secrets/secret1_alias/api-key)" && \
+    echo "password=$(cat /run/secrets/secret2/password)"
+
+LABEL test.label="secret-dirs-test"
+	`, baseImage))
+
+		outputRef := "localhost/test-image-secrets:" + GenerateUniqueTag(t)
+
+		buildParams := BuildParams{
+			Context:    contextDir,
+			OutputRef:  outputRef,
+			Push:       false,
+			SecretDirs: secretDirs,
+		}
+
+		// Setup container with extra volume for secrets
+		container := setupBuildContainerWithCleanup(
+			t, buildParams, nil, WithVolumeWithOptions(secretsBaseDir, "/secrets", "z"),
+		)
+
+		stdout, _, err := runBuildWithOutput(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify that the secret values appear in the build output
+		Expect(stdout).To(ContainSubstring("token=secret-token-value"))
+		Expect(stdout).To(ContainSubstring("api-key=secret-api-key-value"))
+		Expect(stdout).To(ContainSubstring("password=secret-password-value"))
+
+		// Verify the image exists in buildah's local storage
 		err = container.ExecuteCommand("buildah", "images", outputRef)
 		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
 	})

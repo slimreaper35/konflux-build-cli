@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/konflux-ci/konflux-build-cli/pkg/cliwrappers"
+	"github.com/konflux-ci/konflux-build-cli/testutil"
 	. "github.com/onsi/gomega"
 )
 
@@ -83,7 +84,7 @@ func Test_Build_validateParams(t *testing.T) {
 
 			if tc.errExpected {
 				g.Expect(err).To(HaveOccurred())
-				g.Expect(err.Error()).To(ContainSubstring(tc.errSubstring))
+				g.Expect(err.Error()).To(MatchRegexp(tc.errSubstring))
 			} else {
 				g.Expect(err).ToNot(HaveOccurred())
 			}
@@ -210,6 +211,296 @@ func Test_Build_detectContainerfile(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_Build_setSecretArgs(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should append nothing when SecretDirs is nil", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: nil,
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(BeEmpty())
+	})
+
+	t.Run("should append nothing when SecretDirs is empty", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(BeEmpty())
+	})
+
+	t.Run("should append nothing for empty directory", func(t *testing.T) {
+		tempDir := t.TempDir()
+		emptyDir := filepath.Join(tempDir, "empty")
+		if err := os.Mkdir(emptyDir, 0755); err != nil {
+			t.Fatalf("Failed to create empty directory: %s", err)
+		}
+
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{emptyDir},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(BeEmpty())
+	})
+
+	t.Run("should process single file in directory", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"secret1/token": "secret-token",
+		})
+
+		secretDir := filepath.Join(tempDir, "secret1")
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{secretDir},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(Equal([]string{
+			"--secret=id=secret1/token,src=" + filepath.Join(secretDir, "token"),
+		}))
+	})
+
+	t.Run("should process multiple files in directory", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"secret1/password": "secret-pass",
+			"secret1/token":    "secret-token",
+		})
+
+		secretDir := filepath.Join(tempDir, "secret1")
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{secretDir},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(Equal([]string{
+			"--secret=id=secret1/password,src=" + filepath.Join(secretDir, "password"),
+			"--secret=id=secret1/token,src=" + filepath.Join(secretDir, "token"),
+		}))
+	})
+
+	t.Run("should process multiple directories", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"secret1/token":    "token1",
+			"secret2/password": "pass2",
+		})
+
+		secret1Dir := filepath.Join(tempDir, "secret1")
+		secret2Dir := filepath.Join(tempDir, "secret2")
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{secret1Dir, secret2Dir},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(Equal([]string{
+			"--secret=id=secret1/token,src=" + filepath.Join(secret1Dir, "token"),
+			"--secret=id=secret2/password,src=" + filepath.Join(secret2Dir, "password"),
+		}))
+	})
+
+	t.Run("should use custom name from name parameter", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"secret1/token": "secret-token",
+		})
+
+		secretDir := filepath.Join(tempDir, "secret1")
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{"src=" + secretDir + ",name=custom"},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(Equal([]string{
+			"--secret=id=custom/token,src=" + filepath.Join(secretDir, "token"),
+		}))
+	})
+
+	t.Run("should skip subdirectories", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"secret1/token":         "secret-token",
+			"secret1/subdir/nested": "nested",
+		})
+
+		secretDir := filepath.Join(tempDir, "secret1")
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{secretDir},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(Equal([]string{
+			"--secret=id=secret1/token,src=" + filepath.Join(secretDir, "token"),
+		}))
+	})
+
+	t.Run("should allow same filename in different directories", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"secret1/token": "token1",
+			"secret2/token": "token2",
+		})
+
+		secret1Dir := filepath.Join(tempDir, "secret1")
+		secret2Dir := filepath.Join(tempDir, "secret2")
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{secret1Dir, secret2Dir},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(Equal([]string{
+			"--secret=id=secret1/token,src=" + filepath.Join(secret1Dir, "token"),
+			"--secret=id=secret2/token,src=" + filepath.Join(secret2Dir, "token"),
+		}))
+	})
+
+	t.Run("should error on duplicate secret IDs", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"secret1/token":       "token1",
+			"other/secret1/token": "token2",
+		})
+
+		secret1Dir := filepath.Join(tempDir, "secret1")
+		otherSecret1Dir := filepath.Join(tempDir, "other", "secret1")
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{secret1Dir, otherSecret1Dir},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("duplicate secret ID 'secret1/token'"))
+	})
+
+	t.Run("should error when directory does not exist", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{"/nonexistent/path"},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to read secret directory /nonexistent/path"))
+	})
+
+	t.Run("should not error when optional directory does not exist", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{"src=/nonexistent/path,optional=true"},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(BeEmpty())
+	})
+
+	t.Run("should error on invalid SecretDirs syntax", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{"src=/path,invalid=value"},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("invalid attribute: invalid"))
+	})
+
+	t.Run("should error on invalid optional value", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{"src=/path,optional=maybe"},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("invalid argument: optional=maybe"))
+	})
+
+	t.Run("should process symlink to file but skip symlink to directory", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"secret1/..data/token": "secret-token",
+			// secret1/token -> ..data/token
+			// secret1/data -> ..data
+		})
+
+		secretDir := filepath.Join(tempDir, "secret1")
+		tokenSymlink := filepath.Join(secretDir, "token")
+		dataSymlink := filepath.Join(secretDir, "data")
+
+		if err := os.Symlink("..data/token", tokenSymlink); err != nil {
+			t.Fatalf("Failed to create symlink to file: %s", err)
+		}
+		if err := os.Symlink("..data", dataSymlink); err != nil {
+			t.Fatalf("Failed to create symlink to directory: %s", err)
+		}
+
+		c := &Build{
+			Params: &BuildParams{
+				SecretDirs: []string{secretDir},
+			},
+		}
+
+		err := c.setSecretArgs()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.Params.ExtraArgs).To(Equal([]string{
+			"--secret=id=secret1/token,src=" + tokenSymlink,
+		}))
+	})
 }
 
 func Test_Build_Run(t *testing.T) {

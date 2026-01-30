@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 
 	cliWrappers "github.com/konflux-ci/konflux-build-cli/pkg/cliwrappers"
 	"github.com/konflux-ci/konflux-build-cli/pkg/common"
@@ -46,6 +47,13 @@ var BuildParamsConfig = map[string]common.Parameter{
 		DefaultValue: "false",
 		Usage:        "Push the built image to the registry.",
 	},
+	"secret-dirs": {
+		Name:       "secret-dirs",
+		ShortName:  "",
+		EnvVarName: "KBC_BUILD_SECRET_DIRS",
+		TypeKind:   reflect.Slice,
+		Usage:      "Directories containing secret files to make available during build.",
+	},
 }
 
 type BuildParams struct {
@@ -53,6 +61,7 @@ type BuildParams struct {
 	Context       string   `paramName:"context"`
 	OutputRef     string   `paramName:"output-ref"`
 	Push          bool     `paramName:"push"`
+	SecretDirs    []string `paramName:"secret-dirs"`
 	ExtraArgs     []string // Additional arguments to pass to buildah build
 }
 
@@ -117,6 +126,10 @@ func (c *Build) Run() error {
 		return err
 	}
 
+	if err := c.setSecretArgs(); err != nil {
+		return err
+	}
+
 	if err := c.buildImage(); err != nil {
 		return err
 	}
@@ -148,6 +161,9 @@ func (c *Build) logParams() {
 	l.Logger.Infof("[param] Context: %s", c.Params.Context)
 	l.Logger.Infof("[param] OutputRef: %s", c.Params.OutputRef)
 	l.Logger.Infof("[param] Push: %t", c.Params.Push)
+	if len(c.Params.SecretDirs) > 0 {
+		l.Logger.Infof("[param] SecretDirs: %v", c.Params.SecretDirs)
+	}
 	if len(c.Params.ExtraArgs) > 0 {
 		l.Logger.Infof("[param] ExtraArgs: %v", c.Params.ExtraArgs)
 	}
@@ -202,6 +218,131 @@ func (c *Build) detectContainerfile() error {
 	}
 
 	return fmt.Errorf("no Containerfile or Dockerfile found in context directory '%s'", c.Params.Context)
+}
+
+func (c *Build) setSecretArgs() error {
+	secretDirs, err := parseSecretDirs(c.Params.SecretDirs)
+	if err != nil {
+		return fmt.Errorf("parsing --secret-dirs: %w", err)
+	}
+	secretArgs, err := c.processSecretDirs(secretDirs)
+	if err != nil {
+		return fmt.Errorf("processing --secret-dirs: %w", err)
+	}
+	c.Params.ExtraArgs = append(c.Params.ExtraArgs, secretArgs...)
+	return nil
+}
+
+type secretDir struct {
+	src      string
+	name     string
+	optional bool
+}
+
+func parseSecretDirs(secretDirArgs []string) ([]secretDir, error) {
+	var secretDirs []secretDir
+
+	for _, arg := range secretDirArgs {
+		secretDir := secretDir{}
+		keyValues := strings.Split(arg, ",")
+
+		for _, kv := range keyValues {
+			key, value, hasSep := strings.Cut(kv, "=")
+			key = strings.TrimSpace(key)
+			value = strings.TrimSpace(value)
+
+			if !hasSep {
+				value = key
+				key = "src"
+			}
+
+			switch key {
+			case "src":
+				secretDir.src = value
+			case "name":
+				secretDir.name = value
+			case "optional":
+				switch value {
+				case "true":
+					secretDir.optional = true
+				case "false":
+					secretDir.optional = false
+				default:
+					return nil, fmt.Errorf("invalid argument: optional=%s (expected true|false)", value)
+				}
+			default:
+				return nil, fmt.Errorf("invalid attribute: %s", key)
+			}
+		}
+
+		secretDirs = append(secretDirs, secretDir)
+	}
+
+	return secretDirs, nil
+}
+
+// processSecretDirs processes secret directories and returns buildah --secret arguments.
+func (c *Build) processSecretDirs(secretDirs []secretDir) ([]string, error) {
+	var secretArgs []string
+	usedIDs := make(map[string]bool)
+
+	for _, secretDir := range secretDirs {
+		idPrefix := secretDir.name
+		if idPrefix == "" {
+			idPrefix = filepath.Base(secretDir.src)
+		}
+
+		entries, err := os.ReadDir(secretDir.src)
+		if err != nil {
+			if os.IsNotExist(err) && secretDir.optional {
+				l.Logger.Debugf("secret directory %s doesn't exist but is marked optional, skipping", secretDir.src)
+				continue
+			}
+			return nil, fmt.Errorf("failed to read secret directory %s: %w", secretDir.src, err)
+		}
+
+		for _, entry := range entries {
+			isFile, err := isRegular(entry, secretDir.src)
+			if err != nil {
+				return nil, err
+			}
+			if !isFile {
+				continue
+			}
+
+			filename := entry.Name()
+			fullID := filepath.Join(idPrefix, filename)
+
+			// Check for ID conflicts
+			if usedIDs[fullID] {
+				return nil, fmt.Errorf("duplicate secret ID '%s': ensure unique basename/filename combinations", fullID)
+			}
+			usedIDs[fullID] = true
+
+			secretPath := filepath.Join(secretDir.src, filename)
+			secretArgs = append(secretArgs, fmt.Sprintf("--secret=id=%s,src=%s", fullID, secretPath))
+
+			l.Logger.Infof("Adding secret %s to the build, available with 'RUN --mount=type=secret,id=%s'", fullID, fullID)
+		}
+	}
+
+	return secretArgs, nil
+}
+
+func isRegular(entry os.DirEntry, dir string) (bool, error) {
+	t := entry.Type()
+	if t.IsRegular() {
+		return true, nil
+	}
+	if t == os.ModeSymlink {
+		path := filepath.Join(dir, entry.Name())
+		stat, err := os.Stat(path)
+		if err != nil {
+			return false, fmt.Errorf("failed to stat %s: %w", path, err)
+		}
+		return stat.Mode().IsRegular(), nil
+	}
+	return false, nil
 }
 
 func (c *Build) buildImage() error {
