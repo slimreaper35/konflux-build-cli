@@ -49,4 +49,5 @@ func init() {
 
 	// Add commands
 	rootCmd.AddCommand(imageCmd)
+	rootCmd.AddCommand(PrefetchDependenciesCmd)
 }
