@@ -54,6 +54,14 @@ var BuildParamsConfig = map[string]common.Parameter{
 		TypeKind:   reflect.Slice,
 		Usage:      "Directories containing secret files to make available during build.",
 	},
+	"workdir-mount": {
+		Name:         "workdir-mount",
+		ShortName:    "",
+		EnvVarName:   "KBC_BUILD_WORKDIR_MOUNT",
+		TypeKind:     reflect.String,
+		DefaultValue: "",
+		Usage:        "Mount the context directory (which is also the workdir) into the build with '--volume $PWD:$WORKDIR_MOUNT'.",
+	},
 }
 
 type BuildParams struct {
@@ -62,6 +70,7 @@ type BuildParams struct {
 	OutputRef     string   `paramName:"output-ref"`
 	Push          bool     `paramName:"push"`
 	SecretDirs    []string `paramName:"secret-dirs"`
+	WorkdirMount  string   `paramName:"workdir-mount"`
 	ExtraArgs     []string // Additional arguments to pass to buildah build
 }
 
@@ -164,6 +173,9 @@ func (c *Build) logParams() {
 	l.Logger.Infof("[param] Push: %t", c.Params.Push)
 	if len(c.Params.SecretDirs) > 0 {
 		l.Logger.Infof("[param] SecretDirs: %v", c.Params.SecretDirs)
+	}
+	if c.Params.WorkdirMount != "" {
+		l.Logger.Infof("[param] WorkdirMount: %s", c.Params.WorkdirMount)
 	}
 	if len(c.Params.ExtraArgs) > 0 {
 		l.Logger.Infof("[param] ExtraArgs: %v", c.Params.ExtraArgs)
@@ -367,6 +379,12 @@ func (c *Build) buildImage() error {
 		Secrets:       c.buildahSecrets,
 		ExtraArgs:     c.Params.ExtraArgs,
 	}
+	if c.Params.WorkdirMount != "" {
+		buildArgs.Volumes = []cliWrappers.BuildahVolume{
+			{HostDir: c.Params.Context, ContainerDir: c.Params.WorkdirMount, Options: "z"},
+		}
+	}
+
 	if err := buildArgs.MakePathsAbsolute(originalCwd); err != nil {
 		return err
 	}

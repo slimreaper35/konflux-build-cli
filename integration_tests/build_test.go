@@ -29,6 +29,7 @@ type BuildParams struct {
 	OutputRef     string
 	Push          bool
 	SecretDirs    []string
+	WorkdirMount  string
 	ExtraArgs     []string
 }
 
@@ -142,6 +143,9 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	if len(buildParams.SecretDirs) > 0 {
 		args = append(args, "--secret-dirs")
 		args = append(args, buildParams.SecretDirs...)
+	}
+	if buildParams.WorkdirMount != "" {
+		args = append(args, "--workdir-mount", buildParams.WorkdirMount)
 	}
 	// Add separator and extra args if provided
 	if len(buildParams.ExtraArgs) > 0 {
@@ -375,6 +379,55 @@ LABEL test.label="secret-dirs-test"
 		Expect(stdout).To(ContainSubstring("token=secret-token-value"))
 		Expect(stdout).To(ContainSubstring("api-key=secret-api-key-value"))
 		Expect(stdout).To(ContainSubstring("password=secret-password-value"))
+
+		// Verify the image exists in buildah's local storage
+		err = container.ExecuteCommand("buildah", "images", outputRef)
+		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
+	})
+
+	t.Run("WorkdirMount", func(t *testing.T) {
+		contextDir := setupTestContext(t)
+
+		outputRef := "localhost/test-image-workdir-mount:" + GenerateUniqueTag(t)
+
+		buildParams := BuildParams{
+			Context:      contextDir,
+			OutputRef:    outputRef,
+			Push:         false,
+			WorkdirMount: "/buildcontext",
+		}
+
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+		err := container.ExecuteCommand("buildah", "pull", baseImage)
+		Expect(err).ToNot(HaveOccurred())
+		// Push the baseimage to <contextDir>/baseimage.tar (contextDir is mounted at /workspace in the container)
+		err = container.ExecuteCommand(
+			"buildah", "push", "--remove-signatures", baseImage, "oci-archive:/workspace/baseimage.tar",
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		writeContainerfile(contextDir, fmt.Sprintf(`
+FROM %s AS builder
+
+# /buildcontext is mounted with --volume <contextDir>:/buildcontext
+# baseimage.tar exists prior to starting the build
+RUN cp /buildcontext/baseimage.tar /buildcontext/myimage.tar
+
+
+# This form of FROM instructions uses the filesystem of the host, not the container,
+# so /buildcontext does not exist. But during the build, the context directory is
+# the working directory, so this works.
+FROM oci-archive:./myimage.tar
+
+# Need to reference builder here to force ordering, otherwise buildah would skip
+# the builder stage entirely.
+RUN --mount=type=bind,from=builder,src=.,target=/var/tmp \
+    rm /buildcontext/myimage.tar
+`, baseImage))
+
+		err = runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
 
 		// Verify the image exists in buildah's local storage
 		err = container.ExecuteCommand("buildah", "images", outputRef)
