@@ -43,6 +43,7 @@ type BuildahBuildArgs struct {
 	OutputRef     string
 	Secrets       []BuildahSecret
 	Volumes       []BuildahVolume
+	BuildArgs     []string
 	ExtraArgs     []string
 }
 
@@ -140,6 +141,10 @@ func (b *BuildahCli) Build(args *BuildahBuildArgs) error {
 			volumeArg += ":" + volume.Options
 		}
 		buildahArgs = append(buildahArgs, "--volume="+volumeArg)
+	}
+
+	for _, buildArg := range args.BuildArgs {
+		buildahArgs = append(buildahArgs, "--build-arg="+buildArg)
 	}
 
 	// Append extra arguments before the context directory

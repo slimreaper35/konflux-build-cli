@@ -30,6 +30,7 @@ type BuildParams struct {
 	Push          bool
 	SecretDirs    []string
 	WorkdirMount  string
+	BuildArgs     []string
 	ExtraArgs     []string
 }
 
@@ -146,6 +147,10 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	}
 	if buildParams.WorkdirMount != "" {
 		args = append(args, "--workdir-mount", buildParams.WorkdirMount)
+	}
+	if len(buildParams.BuildArgs) > 0 {
+		args = append(args, "--build-args")
+		args = append(args, buildParams.BuildArgs...)
 	}
 	// Add separator and extra args if provided
 	if len(buildParams.ExtraArgs) > 0 {
@@ -432,5 +437,46 @@ RUN --mount=type=bind,from=builder,src=.,target=/var/tmp \
 		// Verify the image exists in buildah's local storage
 		err = container.ExecuteCommand("buildah", "images", outputRef)
 		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
+	})
+
+	t.Run("WithBuildArgs", func(t *testing.T) {
+		contextDir := setupTestContext(t)
+
+		writeContainerfile(contextDir, `
+FROM scratch
+
+ARG NAME
+ARG VERSION
+
+LABEL name=$NAME
+LABEL version=$VERSION
+
+LABEL test.label="build-args-test"
+`)
+
+		outputRef := "localhost/test-image-build-args:" + GenerateUniqueTag(t)
+
+		buildParams := BuildParams{
+			Context:   contextDir,
+			OutputRef: outputRef,
+			Push:      false,
+			BuildArgs: []string{"NAME=foo", "VERSION=1.2.3"},
+		}
+
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
+
+		stdout, _, err := container.ExecuteCommandWithOutput(
+			"buildah", "inspect", "--format", `{{ range $k, $v := .OCIv1.Config.Labels }}{{ printf "%s=%s\n" $k $v }}{{ end }}`, outputRef,
+		)
+		Expect(err).ToNot(HaveOccurred())
+
+		labelLines := strings.Split(strings.TrimSpace(stdout), "\n")
+		Expect(labelLines).To(ContainElements(
+			"name=foo",
+			"version=1.2.3",
+		))
 	})
 }
