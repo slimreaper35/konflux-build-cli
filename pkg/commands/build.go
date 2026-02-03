@@ -54,6 +54,14 @@ var BuildParamsConfig = map[string]common.Parameter{
 		TypeKind:   reflect.Slice,
 		Usage:      "Directories containing secret files to make available during build.",
 	},
+	"workdir-mount": {
+		Name:         "workdir-mount",
+		ShortName:    "",
+		EnvVarName:   "KBC_BUILD_WORKDIR_MOUNT",
+		TypeKind:     reflect.String,
+		DefaultValue: "",
+		Usage:        "Mount the context directory (which is also the workdir) into the build with '--volume $PWD:$WORKDIR_MOUNT'.",
+	},
 }
 
 type BuildParams struct {
@@ -62,6 +70,7 @@ type BuildParams struct {
 	OutputRef     string   `paramName:"output-ref"`
 	Push          bool     `paramName:"push"`
 	SecretDirs    []string `paramName:"secret-dirs"`
+	WorkdirMount  string   `paramName:"workdir-mount"`
 	ExtraArgs     []string // Additional arguments to pass to buildah build
 }
 
@@ -81,6 +90,7 @@ type Build struct {
 	ResultsWriter common.ResultsWriterInterface
 
 	containerfilePath string
+	buildahSecrets    []cliWrappers.BuildahSecret
 }
 
 func NewBuild(cmd *cobra.Command, extraArgs []string) (*Build, error) {
@@ -164,6 +174,9 @@ func (c *Build) logParams() {
 	if len(c.Params.SecretDirs) > 0 {
 		l.Logger.Infof("[param] SecretDirs: %v", c.Params.SecretDirs)
 	}
+	if c.Params.WorkdirMount != "" {
+		l.Logger.Infof("[param] WorkdirMount: %s", c.Params.WorkdirMount)
+	}
 	if len(c.Params.ExtraArgs) > 0 {
 		l.Logger.Infof("[param] ExtraArgs: %v", c.Params.ExtraArgs)
 	}
@@ -225,11 +238,11 @@ func (c *Build) setSecretArgs() error {
 	if err != nil {
 		return fmt.Errorf("parsing --secret-dirs: %w", err)
 	}
-	secretArgs, err := c.processSecretDirs(secretDirs)
+	buildahSecrets, err := c.processSecretDirs(secretDirs)
 	if err != nil {
 		return fmt.Errorf("processing --secret-dirs: %w", err)
 	}
-	c.Params.ExtraArgs = append(c.Params.ExtraArgs, secretArgs...)
+	c.buildahSecrets = buildahSecrets
 	return nil
 }
 
@@ -282,8 +295,8 @@ func parseSecretDirs(secretDirArgs []string) ([]secretDir, error) {
 }
 
 // processSecretDirs processes secret directories and returns buildah --secret arguments.
-func (c *Build) processSecretDirs(secretDirs []secretDir) ([]string, error) {
-	var secretArgs []string
+func (c *Build) processSecretDirs(secretDirs []secretDir) ([]cliWrappers.BuildahSecret, error) {
+	var buildahSecrets []cliWrappers.BuildahSecret
 	usedIDs := make(map[string]bool)
 
 	for _, secretDir := range secretDirs {
@@ -320,13 +333,15 @@ func (c *Build) processSecretDirs(secretDirs []secretDir) ([]string, error) {
 			usedIDs[fullID] = true
 
 			secretPath := filepath.Join(secretDir.src, filename)
-			secretArgs = append(secretArgs, fmt.Sprintf("--secret=id=%s,src=%s", fullID, secretPath))
+			buildahSecrets = append(
+				buildahSecrets, cliWrappers.BuildahSecret{Src: secretPath, Id: fullID},
+			)
 
 			l.Logger.Infof("Adding secret %s to the build, available with 'RUN --mount=type=secret,id=%s'", fullID, fullID)
 		}
 	}
 
-	return secretArgs, nil
+	return buildahSecrets, nil
 }
 
 func isRegular(entry os.DirEntry, dir string) (bool, error) {
@@ -348,11 +363,30 @@ func isRegular(entry os.DirEntry, dir string) (bool, error) {
 func (c *Build) buildImage() error {
 	l.Logger.Info("Building container image...")
 
+	originalCwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	if err := os.Chdir(c.Params.Context); err != nil {
+		return fmt.Errorf("couldn't cd to context directory: %w", err)
+	}
+	defer os.Chdir(originalCwd)
+
 	buildArgs := &cliWrappers.BuildahBuildArgs{
 		Containerfile: c.containerfilePath,
 		ContextDir:    c.Params.Context,
 		OutputRef:     c.Params.OutputRef,
+		Secrets:       c.buildahSecrets,
 		ExtraArgs:     c.Params.ExtraArgs,
+	}
+	if c.Params.WorkdirMount != "" {
+		buildArgs.Volumes = []cliWrappers.BuildahVolume{
+			{HostDir: c.Params.Context, ContainerDir: c.Params.WorkdirMount, Options: "z"},
+		}
+	}
+
+	if err := buildArgs.MakePathsAbsolute(originalCwd); err != nil {
+		return err
 	}
 
 	if err := c.CliWrappers.BuildahCli.Build(buildArgs); err != nil {

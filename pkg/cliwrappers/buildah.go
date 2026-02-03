@@ -2,7 +2,9 @@ package cliwrappers
 
 import (
 	"errors"
+	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	l "github.com/konflux-ci/konflux-build-cli/pkg/logger"
@@ -39,10 +41,26 @@ type BuildahBuildArgs struct {
 	Containerfile string
 	ContextDir    string
 	OutputRef     string
+	Secrets       []BuildahSecret
+	Volumes       []BuildahVolume
 	ExtraArgs     []string
 }
 
-func (b *BuildahCli) Build(args *BuildahBuildArgs) error {
+type BuildahSecret struct {
+	Src string
+	Id  string
+}
+
+// Represents a buildah --volume argument: HOST-DIR:CONTAINER-DIR[:OPTIONS]
+type BuildahVolume struct {
+	HostDir      string
+	ContainerDir string
+	Options      string
+}
+
+// Check that the build arguments are valid, e.g. required arguments are set.
+// Also called automatically by the BuildahCli.Build() method.
+func (args *BuildahBuildArgs) Validate() error {
 	if args.Containerfile == "" {
 		return errors.New("containerfile path is empty")
 	}
@@ -52,8 +70,78 @@ func (b *BuildahCli) Build(args *BuildahBuildArgs) error {
 	if args.OutputRef == "" {
 		return errors.New("output-ref is empty")
 	}
+	for _, volume := range args.Volumes {
+		if strings.ContainsRune(volume.HostDir, ':') {
+			return fmt.Errorf("':' in volume mount source path: %s", volume.HostDir)
+		}
+		if strings.ContainsRune(volume.ContainerDir, ':') {
+			return fmt.Errorf("':' in volume mount target path: %s", volume.ContainerDir)
+		}
+	}
+	return nil
+}
+
+// Make all paths (containerfile, context dir, secret files, ...) absolute.
+func (args *BuildahBuildArgs) MakePathsAbsolute(baseDir string) error {
+	ensureAbsolute := func(path *string) error {
+		if filepath.IsAbs(*path) {
+			return nil
+		}
+		abspath, err := filepath.Abs(filepath.Join(baseDir, *path))
+		if err != nil {
+			return fmt.Errorf("finding absolute path of %s in %s: %w", *path, baseDir, err)
+		}
+		*path = abspath
+		return nil
+	}
+
+	err := ensureAbsolute(&args.Containerfile)
+	if err != nil {
+		return err
+	}
+
+	err = ensureAbsolute(&args.ContextDir)
+	if err != nil {
+		return err
+	}
+
+	for i := range args.Secrets {
+		err = ensureAbsolute(&args.Secrets[i].Src)
+		if err != nil {
+			return err
+		}
+	}
+
+	for i := range args.Volumes {
+		err := ensureAbsolute(&args.Volumes[i].HostDir)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (b *BuildahCli) Build(args *BuildahBuildArgs) error {
+	if err := args.Validate(); err != nil {
+		return fmt.Errorf("validating buildah args: %w", err)
+	}
 
 	buildahArgs := []string{"build", "--file", args.Containerfile, "--tag", args.OutputRef}
+
+	for _, secret := range args.Secrets {
+		secretArg := "src=" + secret.Src + ",id=" + secret.Id
+		buildahArgs = append(buildahArgs, "--secret="+secretArg)
+	}
+
+	for _, volume := range args.Volumes {
+		volumeArg := volume.HostDir + ":" + volume.ContainerDir
+		if volume.Options != "" {
+			volumeArg += ":" + volume.Options
+		}
+		buildahArgs = append(buildahArgs, "--volume="+volumeArg)
+	}
+
 	// Append extra arguments before the context directory
 	buildahArgs = append(buildahArgs, args.ExtraArgs...)
 	// Context directory must be the last argument
