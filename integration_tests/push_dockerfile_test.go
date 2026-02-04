@@ -150,7 +150,7 @@ func TestPushDockerfile(t *testing.T) {
 			cmd := []string{
 				"image", "push-dockerfile",
 				"--image-url", imageRepo,
-				"--digest", tc.params.digest,
+				"--image-digest", tc.params.digest,
 				"--source", "source",
 			}
 			if tc.params.dockerfile != "" {

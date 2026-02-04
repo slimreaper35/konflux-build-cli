@@ -34,8 +34,8 @@ var PushDockerfileParamsConfig = map[string]common.Parameter{
 		Usage:      "Binary image URL. Dockerfile is pushed to the image repository where this binary image is.",
 		Required:   true,
 	},
-	"digest": {
-		Name:       "digest",
+	"image-digest": {
+		Name:       "image-digest",
 		ShortName:  "d",
 		EnvVarName: "KBC_PUSH_DOCKERFILE_IMAGE_DIGEST",
 		TypeKind:   reflect.String,
@@ -98,7 +98,7 @@ var PushDockerfileParamsConfig = map[string]common.Parameter{
 
 type PushDockerfileParams struct {
 	ImageUrl           string `paramName:"image-url"`
-	Digest             string `paramName:"digest"`
+	ImageDigest        string `paramName:"image-digest"`
 	Dockerfile         string `paramName:"dockerfile"`
 	Context            string `paramName:"context"`
 	TagSuffix          string `paramName:"tag-suffix"`
@@ -212,7 +212,7 @@ func (c *PushDockerfile) Run() error {
 }
 
 func (c *PushDockerfile) dockerfileImageTag() string {
-	digest := strings.Replace(c.Params.Digest, ":", "-", 1)
+	digest := strings.Replace(c.Params.ImageDigest, ":", "-", 1)
 	return digest + c.Params.TagSuffix
 }
 
@@ -221,8 +221,8 @@ func (c *PushDockerfile) validateParams() error {
 		return fmt.Errorf("image name '%s' is invalid", c.imageName)
 	}
 
-	if !common.IsImageDigestValid(c.Params.Digest) {
-		return fmt.Errorf("image digest '%s' is invalid", c.Params.Digest)
+	if !common.IsImageDigestValid(c.Params.ImageDigest) {
+		return fmt.Errorf("image digest '%s' is invalid", c.Params.ImageDigest)
 	}
 
 	tagSuffix := c.Params.TagSuffix
@@ -237,7 +237,7 @@ func (c *PushDockerfile) validateParams() error {
 
 func (c *PushDockerfile) logParams() {
 	l.Logger.Infof("[param] Image URL: %s", c.Params.ImageUrl)
-	l.Logger.Infof("[param] Image digest: %s", c.Params.Digest)
+	l.Logger.Infof("[param] Image digest: %s", c.Params.ImageDigest)
 	l.Logger.Infof("[param] Tag suffix: %s", c.Params.TagSuffix)
 	l.Logger.Infof("[param] Dockerfile: %s", c.Params.Dockerfile)
 	l.Logger.Infof("[param] Context: %s", c.Params.Context)

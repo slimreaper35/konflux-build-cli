@@ -37,7 +37,7 @@ func TestValidateParams(t *testing.T) {
 		for _, digest := range []string{"", "some-digest"} {
 			cmd := PushDockerfile{
 				Params: &PushDockerfileParams{
-					Digest: digest,
+					ImageDigest: digest,
 				},
 				imageName: "localhost:5000/cool/app",
 			}
@@ -64,8 +64,8 @@ func TestValidateParams(t *testing.T) {
 		for _, testTagSuffix := range testCases {
 			cmd := PushDockerfile{
 				Params: &PushDockerfileParams{
-					Digest:    imageDigest,
-					TagSuffix: testTagSuffix,
+					ImageDigest: imageDigest,
+					TagSuffix:   testTagSuffix,
 				},
 				imageName: "localhost:5000/cool/app",
 			}
@@ -84,8 +84,8 @@ func TestValidateParams(t *testing.T) {
 func TestDockerfileImageTag(t *testing.T) {
 	cmd := PushDockerfile{
 		Params: &PushDockerfileParams{
-			Digest:    imageDigest,
-			TagSuffix: ".containerfile",
+			ImageDigest: imageDigest,
+			TagSuffix:   ".containerfile",
 		},
 		imageName: "localhost:5000/cool/app",
 	}
@@ -141,7 +141,7 @@ func TestRun(t *testing.T) {
 		cmd := &PushDockerfile{
 			Params: &PushDockerfileParams{
 				ImageUrl:           "localhost.reg.io/app",
-				Digest:             imageDigest,
+				ImageDigest:        imageDigest,
 				Source:             "source",
 				Dockerfile:         "Containerfile",
 				Context:            ".",
@@ -164,11 +164,11 @@ func TestRun(t *testing.T) {
 	t.Run("Do no push if Dockerfile is not found", func(t *testing.T) {
 		cmd := &PushDockerfile{
 			Params: &PushDockerfileParams{
-				ImageUrl:   "localhost.reg.io/app",
-				Digest:     imageDigest,
-				Dockerfile: "Dockerfile",
-				Source:     "source",
-				TagSuffix:  ".containerfile",
+				ImageUrl:    "localhost.reg.io/app",
+				ImageDigest: imageDigest,
+				Dockerfile:  "Dockerfile",
+				Source:      "source",
+				TagSuffix:   ".containerfile",
 			},
 			ResultsWriter: &common.ResultsWriter{},
 		}
@@ -181,12 +181,12 @@ func TestRun(t *testing.T) {
 	t.Run("Registry authentication cannot be selected", func(t *testing.T) {
 		cmd := &PushDockerfile{
 			Params: &PushDockerfileParams{
-				ImageUrl:   "other-registry.io/app",
-				Digest:     imageDigest,
-				Source:     "source",
-				Dockerfile: "Containerfile",
-				Context:    ".",
-				TagSuffix:  ".containerfile",
+				ImageUrl:    "other-registry.io/app",
+				ImageDigest: imageDigest,
+				Source:      "source",
+				Dockerfile:  "Containerfile",
+				Context:     ".",
+				TagSuffix:   ".containerfile",
 			},
 			ResultsWriter: &common.ResultsWriter{},
 		}
@@ -204,12 +204,12 @@ func TestRun(t *testing.T) {
 
 		cmd := &PushDockerfile{
 			Params: &PushDockerfileParams{
-				ImageUrl:   "localhost.reg.io/app",
-				Digest:     imageDigest,
-				Source:     "source",
-				Dockerfile: "Containerfile",
-				Context:    ".",
-				TagSuffix:  ".containerfile",
+				ImageUrl:    "localhost.reg.io/app",
+				ImageDigest: imageDigest,
+				Source:      "source",
+				Dockerfile:  "Containerfile",
+				Context:     ".",
+				TagSuffix:   ".containerfile",
 			},
 			ResultsWriter: &common.ResultsWriter{},
 			OrasClient:    orasClient,
