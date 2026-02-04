@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	dockerfileAritfactTagSuffix = ".dockerfile"
+	dockerfileArtifactTagSuffix = ".dockerfile"
 	dockerfileArtifactType      = "application/vnd.konflux.dockerfile"
 	dockerfileContext           = "."
 	dockerfileFilePath          = "./Dockerfile"
@@ -65,7 +65,7 @@ var PushDockerfileParamsConfig = map[string]common.Parameter{
 		ShortName:    "t",
 		EnvVarName:   "KBC_PUSH_DOCKERFILE_TAG_SUFFIX",
 		TypeKind:     reflect.String,
-		DefaultValue: dockerfileAritfactTagSuffix,
+		DefaultValue: dockerfileArtifactTagSuffix,
 		Usage:        "Suffix to construct artifact image tag. Defaults to '.dockerfile'.",
 		Required:     false,
 	},

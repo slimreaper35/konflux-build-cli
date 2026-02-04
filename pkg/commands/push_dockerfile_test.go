@@ -161,7 +161,7 @@ func TestRun(t *testing.T) {
 		g.Expect(string(actualImageRef)).Should(Equal(expectedImageRef))
 	})
 
-	t.Run("Do no push if Dockerfile is not found", func(t *testing.T) {
+	t.Run("Do not push if Dockerfile is not found", func(t *testing.T) {
 		cmd := &PushDockerfile{
 			Params: &PushDockerfileParams{
 				ImageUrl:    "localhost.reg.io/app",
