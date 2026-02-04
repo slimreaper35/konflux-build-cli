@@ -25,17 +25,6 @@ const (
 	tagSuffixRegex = "^[a-zA-Z0-9._-]{1,57}$"
 )
 
-type PushDockerfileParams struct {
-	ImageUrl           string `paramName:"image-url"`
-	Digest             string `paramName:"digest"`
-	Dockerfile         string `paramName:"dockerfile"`
-	Context            string `paramName:"context"`
-	TagSuffix          string `paramName:"tag-suffix"`
-	ArtifactType       string `paramName:"artifact-type"`
-	Source             string `paramName:"source"`
-	ImageRefResultFile string `paramName:"image-ref-result-file"`
-}
-
 var PushDockerfileParamsConfig = map[string]common.Parameter{
 	"image-url": {
 		Name:       "image-url",
@@ -105,6 +94,17 @@ var PushDockerfileParamsConfig = map[string]common.Parameter{
 		Usage:      "Write digested image reference of the pushed Dockerfile image into this file.",
 		Required:   false,
 	},
+}
+
+type PushDockerfileParams struct {
+	ImageUrl           string `paramName:"image-url"`
+	Digest             string `paramName:"digest"`
+	Dockerfile         string `paramName:"dockerfile"`
+	Context            string `paramName:"context"`
+	TagSuffix          string `paramName:"tag-suffix"`
+	ArtifactType       string `paramName:"artifact-type"`
+	Source             string `paramName:"source"`
+	ImageRefResultFile string `paramName:"image-ref-result-file"`
 }
 
 type PushDockerfileResults struct {
