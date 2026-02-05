@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -61,15 +60,6 @@ func TestPushDockerfile(t *testing.T) {
 	g := NewWithT(t)
 
 	commonOpts := []ContainerOption{}
-	// On macOS, containers run in a Linux VM; overlay storage driver
-	// doesn't work reliably with host volume mounts through the VM
-	if runtime.GOOS != "darwin" {
-		containerStoragePath, err := createContainerStorageDir()
-		Expect(err).ShouldNot(HaveOccurred())
-		t.Cleanup(func() { removeContainerStorageDir(containerStoragePath) })
-		commonOpts = append(commonOpts, WithVolumeWithOptions(containerStoragePath, "/var/lib/containers", "z"))
-	}
-
 	imageRegistry := setupImageRegistry(t)
 	container := setupPushDockerfileContainerWithCleanup(t, imageRegistry, commonOpts...)
 	homeDir, err := container.GetHomeDir()
