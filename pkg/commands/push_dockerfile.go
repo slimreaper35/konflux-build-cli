@@ -86,10 +86,10 @@ var PushDockerfileParamsConfig = map[string]common.Parameter{
 		Usage:      "Directory containing the source code. It is a relative path to the root of current working directory.",
 		Required:   true,
 	},
-	"image-ref-result-file": {
-		Name:       "image-ref-result-file",
+	"result-path-image-ref": {
+		Name:       "result-path-image-ref",
 		ShortName:  "r",
-		EnvVarName: "KBC_PUSH_DOCKERFILE_RESULT_IMAGE_REF",
+		EnvVarName: "KBC_PUSH_DOCKERFILE_RESULT_PATH_IMAGE_REF",
 		TypeKind:   reflect.String,
 		Usage:      "Write digested image reference of the pushed Dockerfile image into this file.",
 		Required:   false,
@@ -104,7 +104,7 @@ type PushDockerfileParams struct {
 	TagSuffix          string `paramName:"tag-suffix"`
 	ArtifactType       string `paramName:"artifact-type"`
 	Source             string `paramName:"source"`
-	ImageRefResultFile string `paramName:"image-ref-result-file"`
+	ResultPathImageRef string `paramName:"result-path-image-ref"`
 }
 
 type PushDockerfileResults struct {
@@ -200,8 +200,8 @@ func (c *PushDockerfile) Run() error {
 		fmt.Print(resultsJson)
 	}
 
-	if c.Params.ImageRefResultFile != "" {
-		err = c.ResultsWriter.WriteResultString(artifactImageRef, c.Params.ImageRefResultFile)
+	if c.Params.ResultPathImageRef != "" {
+		err = c.ResultsWriter.WriteResultString(artifactImageRef, c.Params.ResultPathImageRef)
 		if err != nil {
 			return fmt.Errorf("Error on writing result image digest: %w", err)
 		}
@@ -240,5 +240,5 @@ func (c *PushDockerfile) logParams() {
 	l.Logger.Infof("[param] Context: %s", c.Params.Context)
 	l.Logger.Infof("[param] Artifact type: %s", c.Params.ArtifactType)
 	l.Logger.Infof("[param] Source directory: %s", c.Params.Source)
-	l.Logger.Infof("[param] Image Reference result file: %s", c.Params.ImageRefResultFile)
+	l.Logger.Infof("[param] Image Reference result file: %s", c.Params.ResultPathImageRef)
 }

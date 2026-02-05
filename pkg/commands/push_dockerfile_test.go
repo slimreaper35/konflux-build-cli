@@ -146,7 +146,7 @@ func TestRun(t *testing.T) {
 				Context:            ".",
 				TagSuffix:          ".dockerfile",
 				ArtifactType:       "application/vnd.konflux.dockerfile",
-				ImageRefResultFile: filepath.Join(workDir, "results", "image-ref"),
+				ResultPathImageRef: filepath.Join(workDir, "results", "image-ref"),
 			},
 			ResultsWriter: &common.ResultsWriter{},
 			OrasClient:    orasClient,
@@ -156,7 +156,7 @@ func TestRun(t *testing.T) {
 		g.Expect(err).ShouldNot(HaveOccurred())
 
 		expectedImageRef := "localhost.reg.io/app@" + artifactImageDigest
-		actualImageRef, _ := os.ReadFile(cmd.Params.ImageRefResultFile)
+		actualImageRef, _ := os.ReadFile(cmd.Params.ResultPathImageRef)
 		g.Expect(string(actualImageRef)).Should(Equal(expectedImageRef))
 	})
 

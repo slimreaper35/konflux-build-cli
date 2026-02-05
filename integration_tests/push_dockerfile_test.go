@@ -52,7 +52,7 @@ type PushDockerfileParams struct {
 	digest             string
 	tagSuffix          string
 	artifactType       string
-	imageRefResultFile string
+	resultPathImageRef string
 }
 
 func TestPushDockerfile(t *testing.T) {
@@ -101,7 +101,7 @@ func TestPushDockerfile(t *testing.T) {
 				source:             "source",
 				digest:             "sha256:cfc8226f8268c70848148f19c35b02788b272a5a7c0071906a9c6b654760e44a",
 				dockerfile:         "./Dockerfile",
-				imageRefResultFile: "/tmp/result-image-ref",
+				resultPathImageRef: "/tmp/result-image-ref",
 			},
 			expectedTaggedDigest:         "sha256-cfc8226f8268c70848148f19c35b02788b272a5a7c0071906a9c6b654760e44a",
 			expectedDockerfileDigest:     sourceDockerfileContentDigest,
@@ -165,8 +165,8 @@ func TestPushDockerfile(t *testing.T) {
 			if tc.params.dockerfile != "" {
 				cmd = append(cmd, "--dockerfile", tc.params.dockerfile)
 			}
-			if tc.params.imageRefResultFile != "" {
-				cmd = append(cmd, "--image-ref-result-file", tc.params.imageRefResultFile)
+			if tc.params.resultPathImageRef != "" {
+				cmd = append(cmd, "--result-path-image-ref", tc.params.resultPathImageRef)
 			}
 			if tc.params.tagSuffix != "" {
 				cmd = append(cmd, "--tag-suffix", tc.params.tagSuffix)
@@ -211,8 +211,8 @@ func TestPushDockerfile(t *testing.T) {
 
 			g.Expect(manifest.ArtifactType).Should(Equal(expectedArtifactType))
 
-			if tc.params.imageRefResultFile != "" {
-				result, err := container.GetTaskResultValue(tc.params.imageRefResultFile)
+			if tc.params.resultPathImageRef != "" {
+				result, err := container.GetTaskResultValue(tc.params.resultPathImageRef)
 				g.Expect(err).ShouldNot(HaveOccurred())
 				digest := sha256Checksum(strings.TrimRight(manifestJson, "\r\n"))
 				expectedArtifactImageRef := fmt.Sprintf("%s@sha256:%s", imageRepo, digest)
