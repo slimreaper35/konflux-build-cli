@@ -142,7 +142,7 @@ func TestFallbackSelectionForDockerIO(t *testing.T) {
 	}
 }
 
-func TestExtractCredential(t *testing.T) {
+func TestExtractCredentials(t *testing.T) {
 	testCases := []struct {
 		name          string
 		token         string
@@ -204,7 +204,7 @@ func TestExtractCredential(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			username, password, err := ExtractCredential(tc.token)
+			username, password, err := ExtractCredentials(tc.token)
 
 			if tc.expectedError {
 				if err == nil {

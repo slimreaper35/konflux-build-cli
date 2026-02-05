@@ -172,7 +172,7 @@ func (c *PushDockerfile) Run() error {
 		return fmt.Errorf("Cannot select registry authentication for image %s: %w", imageUrl, err)
 	}
 
-	username, password, err := common.ExtractCredential(registryAuth.Token)
+	username, password, err := common.ExtractCredentials(registryAuth.Token)
 	if err != nil {
 		return fmt.Errorf("Error on extracting authentication credential: %w", err)
 	}

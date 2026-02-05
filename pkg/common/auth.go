@@ -114,8 +114,10 @@ func readAuthFile(authFilePath string) (*RegistryAuths, error) {
 	return &registryAuths, nil
 }
 
-func ExtractCredential(token string) (string, string, error) {
-	decoded, err := base64.StdEncoding.DecodeString(token)
+// ExtractCredentials extracts and returns username and password from argument authCred.
+// Argument authCred is expected to be a base64-encoded string containing username and password separated by colon.
+func ExtractCredentials(authCred string) (string, string, error) {
+	decoded, err := base64.StdEncoding.DecodeString(authCred)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to decode token: %w", err)
 	}
