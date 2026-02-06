@@ -24,15 +24,16 @@ const (
 )
 
 type BuildParams struct {
-	Context       string
-	Containerfile string
-	OutputRef     string
-	Push          bool
-	SecretDirs    []string
-	WorkdirMount  string
-	BuildArgs     []string
-	BuildArgsFile string
-	ExtraArgs     []string
+	Context                 string
+	Containerfile           string
+	OutputRef               string
+	Push                    bool
+	SecretDirs              []string
+	WorkdirMount            string
+	BuildArgs               []string
+	BuildArgsFile           string
+	ContainerfileJsonOutput string
+	ExtraArgs               []string
 }
 
 // Public interface for parity with ApplyTags. Not used in these tests directly.
@@ -155,6 +156,9 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	}
 	if buildParams.BuildArgsFile != "" {
 		args = append(args, "--build-args-file", buildParams.BuildArgsFile)
+	}
+	if buildParams.ContainerfileJsonOutput != "" {
+		args = append(args, "--containerfile-json-output", buildParams.ContainerfileJsonOutput)
 	}
 	// Add separator and extra args if provided
 	if len(buildParams.ExtraArgs) > 0 {
@@ -493,5 +497,59 @@ LABEL test.label="build-args-test"
 			"author=John Doe",
 			"vendor=konflux-ci.dev",
 		))
+	})
+
+	t.Run("ContainerfileJsonOutput", func(t *testing.T) {
+		contextDir := setupTestContext(t)
+
+		writeContainerfile(contextDir, `FROM scratch`)
+
+		outputRef := "localhost/test-containerfile-json-output:" + GenerateUniqueTag(t)
+		containerfileJsonPath := "/workspace/parsed-containerfile.json"
+
+		buildParams := BuildParams{
+			Context:                 contextDir,
+			OutputRef:               outputRef,
+			Push:                    false,
+			ContainerfileJsonOutput: containerfileJsonPath,
+		}
+
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
+
+		containerfileJSON, err := container.GetFileContent(containerfileJsonPath)
+		Expect(err).ToNot(HaveOccurred())
+
+		Expect(containerfileJSON).To(Equal(`{
+  "MetaArgs": null,
+  "Stages": [
+    {
+      "Name": "",
+      "OrigCmd": "FROM",
+      "BaseName": "scratch",
+      "Platform": "",
+      "Comment": "",
+      "SourceCode": "FROM scratch",
+      "Location": [
+        {
+          "Start": {
+            "Line": 1,
+            "Character": 0
+          },
+          "End": {
+            "Line": 1,
+            "Character": 0
+          }
+        }
+      ],
+      "From": {
+        "Scratch": true
+      },
+      "Commands": null
+    }
+  ]
+}`))
 	})
 }

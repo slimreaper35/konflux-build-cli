@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 	"github.com/konflux-ci/konflux-build-cli/pkg/common"
 	"github.com/spf13/cobra"
 
+	"github.com/keilerkonzept/dockerfile-json/pkg/dockerfile"
 	l "github.com/konflux-ci/konflux-build-cli/pkg/logger"
 )
 
@@ -76,18 +78,26 @@ var BuildParamsConfig = map[string]common.Parameter{
 		TypeKind:   reflect.String,
 		Usage:      "Path to a file with build arguments, see https://www.mankier.com/1/buildah-build#--build-arg-file",
 	},
+	"containerfile-json-output": {
+		Name:       "containerfile-json-output",
+		ShortName:  "",
+		EnvVarName: "KBC_BUILD_CONTAINERFILE_JSON_OUTPUT",
+		TypeKind:   reflect.String,
+		Usage:      "Write the parsed Containerfile JSON representation to this path.",
+	},
 }
 
 type BuildParams struct {
-	Containerfile string   `paramName:"containerfile"`
-	Context       string   `paramName:"context"`
-	OutputRef     string   `paramName:"output-ref"`
-	Push          bool     `paramName:"push"`
-	SecretDirs    []string `paramName:"secret-dirs"`
-	WorkdirMount  string   `paramName:"workdir-mount"`
-	BuildArgs     []string `paramName:"build-args"`
-	BuildArgsFile string   `paramName:"build-args-file"`
-	ExtraArgs     []string // Additional arguments to pass to buildah build
+	Containerfile           string   `paramName:"containerfile"`
+	Context                 string   `paramName:"context"`
+	OutputRef               string   `paramName:"output-ref"`
+	Push                    bool     `paramName:"push"`
+	SecretDirs              []string `paramName:"secret-dirs"`
+	WorkdirMount            string   `paramName:"workdir-mount"`
+	BuildArgs               []string `paramName:"build-args"`
+	BuildArgsFile           string   `paramName:"build-args-file"`
+	ContainerfileJsonOutput string   `paramName:"containerfile-json-output"`
+	ExtraArgs               []string // Additional arguments to pass to buildah build
 }
 
 type BuildCliWrappers struct {
@@ -152,6 +162,11 @@ func (c *Build) Run() error {
 		return err
 	}
 
+	containerfile, err := c.parseContainerfile()
+	if err != nil {
+		return err
+	}
+
 	if err := c.setSecretArgs(); err != nil {
 		return err
 	}
@@ -168,6 +183,12 @@ func (c *Build) Run() error {
 			return err
 		}
 		c.Results.Digest = digest
+	}
+
+	if c.Params.ContainerfileJsonOutput != "" {
+		if err := c.writeContainerfileJson(containerfile, c.Params.ContainerfileJsonOutput); err != nil {
+			return err
+		}
 	}
 
 	if resultJson, err := c.ResultsWriter.CreateResultJson(c.Results); err == nil {
@@ -198,6 +219,9 @@ func (c *Build) logParams() {
 	}
 	if c.Params.BuildArgsFile != "" {
 		l.Logger.Infof("[param] BuildArgsFile: %s", c.Params.BuildArgsFile)
+	}
+	if c.Params.ContainerfileJsonOutput != "" {
+		l.Logger.Infof("[param] ContainerfileJsonOutput: %s", c.Params.ContainerfileJsonOutput)
 	}
 	if len(c.Params.ExtraArgs) > 0 {
 		l.Logger.Infof("[param] ExtraArgs: %v", c.Params.ExtraArgs)
@@ -382,6 +406,17 @@ func isRegular(entry os.DirEntry, dir string) (bool, error) {
 	return false, nil
 }
 
+func (c *Build) parseContainerfile() (*dockerfile.Dockerfile, error) {
+	l.Logger.Debugf("Parsing Containerfile: %s", c.containerfilePath)
+
+	containerfile, err := dockerfile.Parse(c.containerfilePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse %s: %w", c.containerfilePath, err)
+	}
+
+	return containerfile, nil
+}
+
 func (c *Build) buildImage() error {
 	l.Logger.Info("Building container image...")
 
@@ -437,4 +472,20 @@ func (c *Build) pushImage() (string, error) {
 	l.Logger.Infof("Image digest: %s", digest)
 
 	return digest, nil
+}
+
+func (c *Build) writeContainerfileJson(containerfile *dockerfile.Dockerfile, outputPath string) error {
+	l.Logger.Infof("Writing parsed Containerfile to: %s", outputPath)
+
+	jsonData, err := json.MarshalIndent(containerfile, "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed to marshal Containerfile to JSON: %w", err)
+	}
+
+	if err := os.WriteFile(outputPath, jsonData, 0644); err != nil {
+		return fmt.Errorf("failed to write Containerfile JSON: %w", err)
+	}
+
+	l.Logger.Info("Containerfile JSON written successfully")
+	return nil
 }

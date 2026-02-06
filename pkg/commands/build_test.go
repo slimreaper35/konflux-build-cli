@@ -503,6 +503,87 @@ func Test_Build_setSecretArgs(t *testing.T) {
 	})
 }
 
+func Test_Build_parseContainerfile(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should successfully parse valid Containerfile", func(t *testing.T) {
+		tempDir := t.TempDir()
+		containerfilePath := filepath.Join(tempDir, "Containerfile")
+		os.WriteFile(containerfilePath, []byte("FROM scratch\nRUN echo hello"), 0644)
+
+		c := &Build{containerfilePath: containerfilePath}
+		result, err := c.parseContainerfile()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(result).ToNot(BeNil())
+	})
+
+	t.Run("should return error for non-existent file", func(t *testing.T) {
+		c := &Build{containerfilePath: "/nonexistent/Containerfile"}
+		result, err := c.parseContainerfile()
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(MatchRegexp("failed to parse /nonexistent/Containerfile:.* no such file or directory"))
+		g.Expect(result).To(BeNil())
+	})
+
+	t.Run("should return error for invalid Containerfile syntax", func(t *testing.T) {
+		tempDir := t.TempDir()
+		containerfilePath := filepath.Join(tempDir, "Containerfile")
+		os.WriteFile(containerfilePath, []byte("INVALID SYNTAX HERE"), 0644)
+
+		c := &Build{containerfilePath: containerfilePath}
+		result, err := c.parseContainerfile()
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(MatchRegexp("failed to parse .*: unknown instruction: INVALID"))
+		g.Expect(result).To(BeNil())
+	})
+}
+
+func Test_Build_writeContainerfileJson(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should successfully write JSON to specified path", func(t *testing.T) {
+		tempDir := t.TempDir()
+		outputPath := filepath.Join(tempDir, "containerfile.json")
+
+		containerfilePath := filepath.Join(tempDir, "Containerfile")
+		os.WriteFile(containerfilePath, []byte("FROM scratch"), 0644)
+
+		c := &Build{containerfilePath: containerfilePath}
+		containerfile, err := c.parseContainerfile()
+		g.Expect(err).ToNot(HaveOccurred())
+
+		err = c.writeContainerfileJson(containerfile, outputPath)
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(outputPath).To(BeAnExistingFile())
+
+		content, err := os.ReadFile(outputPath)
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Full file content tested in integration tests
+		g.Expect(string(content)).To(ContainSubstring(`"Stages":`))
+	})
+
+	t.Run("should return error when path is not writable", func(t *testing.T) {
+		tempDir := t.TempDir()
+		containerfilePath := filepath.Join(tempDir, "Containerfile")
+		os.WriteFile(containerfilePath, []byte("FROM scratch"), 0644)
+
+		c := &Build{containerfilePath: containerfilePath}
+		containerfile, err := c.parseContainerfile()
+		g.Expect(err).ToNot(HaveOccurred())
+
+		unwritablePath := "/nonexistent/directory/containerfile.json"
+		err = c.writeContainerfileJson(containerfile, unwritablePath)
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("failed to write Containerfile JSON"))
+	})
+}
+
 func Test_Build_Run(t *testing.T) {
 	g := NewWithT(t)
 
