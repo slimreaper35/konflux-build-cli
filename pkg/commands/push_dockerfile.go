@@ -55,7 +55,7 @@ var PushContainerfileParamsConfig = map[string]common.Parameter{
 		EnvVarName:   "KBC_PUSH_CONTAINERFILE_CONTEXT",
 		TypeKind:     reflect.String,
 		DefaultValue: containerfileContext,
-		Usage:        fmt.Sprintf("Build context used to search Containerfile. Defaults to '%s'.", containerfileContext),
+		Usage:        "Build context used to search Containerfile.",
 		Required:     false,
 	},
 	"tag-suffix": {
@@ -64,7 +64,7 @@ var PushContainerfileParamsConfig = map[string]common.Parameter{
 		EnvVarName:   "KBC_PUSH_CONTAINERFILE_TAG_SUFFIX",
 		TypeKind:     reflect.String,
 		DefaultValue: containerfileArtifactTagSuffix,
-		Usage:        fmt.Sprintf("Suffix to construct artifact image tag. Defaults to '%s'.", containerfileArtifactTagSuffix),
+		Usage:        "Suffix to construct artifact image tag",
 		Required:     false,
 	},
 	"artifact-type": {
@@ -73,7 +73,7 @@ var PushContainerfileParamsConfig = map[string]common.Parameter{
 		EnvVarName:   "KBC_PUSH_CONTAINERFILE_ARTIFACT_TYPE",
 		TypeKind:     reflect.String,
 		DefaultValue: containerfileArtifactType,
-		Usage:        fmt.Sprintf("Artifact type of the Containerfile artifact image. Defaults to '%s'.", containerfileArtifactType),
+		Usage:        "Artifact type of the Containerfile artifact image.",
 		Required:     false,
 	},
 	"source": {
