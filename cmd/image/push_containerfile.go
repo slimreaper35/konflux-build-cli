@@ -11,16 +11,14 @@ import (
 var PushContainerfileCmd = &cobra.Command{
 	Use:   "push-containerfile",
 	Short: "Discover Containerfile from source code and push it to registry as an OCI artifact.",
-	Long: `push-containerfile pushes Containerfile to image registry as an OCI artifact.
+	Long: `Pushes Containerfile to image registry as an OCI artifact.
 
 Containerfile is auto-detected from the source by default. It is searched
 firstly from build context, then the source directory. Dockerfile is supported
 as a fallback. If neither is found command exits as normal without pushing
 anyting. The search is highly customizable with arguments --source, --context
-and --containerfile.
-
-Examples:
-
+and --containerfile.`,
+	Example: `
   # Push source/Containerfile as artifact quay.io/org/app:sha256-1234567.containerfile
   konflux-build-cli image push-containerfile --image-url quay.io/org/app --image-digest sha256:1234567 --source source
 

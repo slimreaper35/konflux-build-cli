@@ -116,13 +116,13 @@ func TestRun(t *testing.T) {
 
 	os.WriteFile(filepath.Join(workDir, "source", "Containerfile"), []byte("FROM fedora"), 0644)
 
-	originHomeDir := os.Getenv("HOME")
+	originalHomeDir := os.Getenv("HOME")
 	os.Setenv("HOME", workDir)
 
 	curDir, _ := os.Getwd()
 	defer func() {
 		os.Chdir(curDir)
-		os.Setenv("HOME", originHomeDir)
+		os.Setenv("HOME", originalHomeDir)
 	}()
 
 	// Mock docker config for selecting registry authentication.

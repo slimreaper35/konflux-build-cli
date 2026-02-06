@@ -38,7 +38,7 @@ var PushContainerfileParamsConfig = map[string]common.Parameter{
 		ShortName:  "d",
 		EnvVarName: "KBC_PUSH_CONTAINERFILE_IMAGE_DIGEST",
 		TypeKind:   reflect.String,
-		Usage:      "Binary image digest, which is used to construct the tag of Containerfile image.",
+		Usage:      "Digest of the built binary image represented by argument --image-url. It is used to construct the tag of Containerfile image.",
 		Required:   true,
 	},
 	"containerfile": {
@@ -55,7 +55,7 @@ var PushContainerfileParamsConfig = map[string]common.Parameter{
 		EnvVarName:   "KBC_PUSH_CONTAINERFILE_CONTEXT",
 		TypeKind:     reflect.String,
 		DefaultValue: containerfileContext,
-		Usage:        "Build context used to search Containerfile.",
+		Usage:        "Build context used to search Containerfile in.",
 		Required:     false,
 	},
 	"tag-suffix": {
@@ -81,7 +81,7 @@ var PushContainerfileParamsConfig = map[string]common.Parameter{
 		ShortName:  "s",
 		EnvVarName: "KBC_PUSH_CONTAINERFILE_SOURCE",
 		TypeKind:   reflect.String,
-		Usage:      "Directory containing the source code. It is a relative path to the root of current working directory.",
+		Usage:      "Path to a directory containing the source code.",
 		Required:   true,
 	},
 	"result-path-image-ref": {
@@ -157,14 +157,14 @@ func (c *PushContainerfile) Run() error {
 	}
 
 	if containerfilePath == "" {
-		l.Logger.Debugf("Containerfile '%s' is not found from source '%s' and context '%s'. Abort push.",
+		l.Logger.Infof("Containerfile '%s' is not found from source '%s' and context '%s'. Abort push.",
 			c.Params.Containerfile, c.Params.Source, c.Params.Context)
 		return nil
 	}
 
 	l.Logger.Debugf("Got Containerfile: %s", containerfilePath)
 
-	l.Logger.Debugf("Select registry authentication for %s\n", imageUrl)
+	l.Logger.Debugf("Select registry authentication for %s", imageUrl)
 	registryAuth, err := common.SelectRegistryAuthFromDefaultAuthFile(imageUrl)
 	if err != nil {
 		return fmt.Errorf("Cannot select registry authentication for image %s: %w", imageUrl, err)
@@ -187,7 +187,7 @@ func (c *PushContainerfile) Run() error {
 		return fmt.Errorf("Failed to push Containerfile %s: %w", containerfilePath, err)
 	}
 
-	l.Logger.Debugf("Containerfile '%s' is pushed to registry with tag: %s\n", containerfilePath, tag)
+	l.Logger.Infof("Containerfile '%s' is pushed to registry with tag: %s", containerfilePath, tag)
 
 	artifactImageRef := fmt.Sprintf("%s@%s", c.imageName, digest)
 
@@ -238,5 +238,7 @@ func (c *PushContainerfile) logParams() {
 	l.Logger.Infof("[param] Context: %s", c.Params.Context)
 	l.Logger.Infof("[param] Artifact type: %s", c.Params.ArtifactType)
 	l.Logger.Infof("[param] Source directory: %s", c.Params.Source)
-	l.Logger.Infof("[param] Image Reference result file: %s", c.Params.ResultPathImageRef)
+	if c.Params.ResultPathImageRef != "" {
+		l.Logger.Infof("[param] Image Reference result file: %s", c.Params.ResultPathImageRef)
+	}
 }
