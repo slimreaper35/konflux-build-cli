@@ -119,7 +119,7 @@ func TestOrasCli_Push(t *testing.T) {
 		g.Expect(stderr).Should(Equal("push progress"))
 	})
 
-	t.Run("missing destination image", func(t *testing.T) {
+	t.Run("should return error when missing destination image", func(t *testing.T) {
 		pushArgs := &cliwrappers.OrasPushArgs{
 			FileName: fileName,
 		}
@@ -133,7 +133,7 @@ func TestOrasCli_Push(t *testing.T) {
 		g.Expect(stderr).Should(Equal(""))
 	})
 
-	t.Run("missing input file", func(t *testing.T) {
+	t.Run("should return error when missing input file", func(t *testing.T) {
 		pushArgs := &cliwrappers.OrasPushArgs{
 			DestinationImage: artifactImage,
 		}

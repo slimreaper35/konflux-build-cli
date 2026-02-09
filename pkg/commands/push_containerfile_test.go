@@ -175,7 +175,7 @@ func TestRun(t *testing.T) {
 
 	})
 
-	t.Run("Do not push if specified Containerfile is not found", func(t *testing.T) {
+	t.Run("should not push and exits as normal if specified Containerfile is not found", func(t *testing.T) {
 		logFilename := filepath.Join(t.TempDir(), "logfile")
 		logFile, _ := os.OpenFile(logFilename, os.O_CREATE|os.O_WRONLY, 0644)
 
@@ -210,7 +210,7 @@ func TestRun(t *testing.T) {
 		g.Expect(string(logContent)).Should(ContainSubstring(expectedMsg))
 	})
 
-	t.Run("Registry authentication cannot be selected", func(t *testing.T) {
+	t.Run("should return error when registry authentication cannot be selected", func(t *testing.T) {
 		cmd := &PushContainerfile{
 			Params: &PushContainerfileParams{
 				ImageUrl:      "other-registry.io/app",
@@ -228,7 +228,7 @@ func TestRun(t *testing.T) {
 		g.Expect(err).Should(MatchError(ContainSubstring(expectedErrMsg)))
 	})
 
-	t.Run("Oras push fails", func(t *testing.T) {
+	t.Run("should return error when oras push command fails", func(t *testing.T) {
 		orasCli := &mockOrasCli{}
 		orasCli.PushFunc = func(args *cliwrappers.OrasPushArgs) (string, string, error) {
 			return "", "", fmt.Errorf("Mock oras push failed")
