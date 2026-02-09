@@ -161,7 +161,7 @@ func TestRun(t *testing.T) {
 						ResultPathImageRef: filepath.Join(workDir, "results", "image-ref"),
 					},
 					ResultsWriter: &common.ResultsWriter{},
-					CliWrappers:   OrasCliWrappers{OrasCli: orasCli},
+					CliWrappers:   PushContainerfileCliWrappers{OrasCli: orasCli},
 				}
 
 				err := cmd.Run()
@@ -244,7 +244,7 @@ func TestRun(t *testing.T) {
 				TagSuffix:     ".containerfile",
 			},
 			ResultsWriter: &common.ResultsWriter{},
-			CliWrappers:   OrasCliWrappers{OrasCli: orasCli},
+			CliWrappers:   PushContainerfileCliWrappers{OrasCli: orasCli},
 		}
 
 		err := cmd.Run()

@@ -110,13 +110,13 @@ type PushContainerfileResults struct {
 	ImageRef string `json:"image_ref"`
 }
 
-type OrasCliWrappers struct {
+type PushContainerfileCliWrappers struct {
 	OrasCli cliwrappers.OrasCliInterface
 }
 
 type PushContainerfile struct {
 	Params        *PushContainerfileParams
-	CliWrappers   OrasCliWrappers
+	CliWrappers   PushContainerfileCliWrappers
 	Results       PushContainerfileResults
 	ResultsWriter common.ResultsWriterInterface
 
