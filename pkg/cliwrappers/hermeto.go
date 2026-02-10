@@ -13,9 +13,9 @@ var log = logger.Logger.WithField("logger", "HermetoCli")
 
 type HermetoCliInterface interface {
 	Version() error
-	FetchDeps(params *FetchDepsParams) error
-	GenerateEnv(params *GenerateEnvParams) error
-	InjectFiles(params *InjectFilesParams) error
+	FetchDeps(params *HermetoFetchDepsParams) error
+	GenerateEnv(params *HermetoGenerateEnvParams) error
+	InjectFiles(params *HermetoInjectFilesParams) error
 }
 
 type HermetoCli struct {
@@ -56,7 +56,7 @@ const (
 	CycloneDX SBOMFormat = "cyclonedx"
 )
 
-type FetchDepsParams struct {
+type HermetoFetchDepsParams struct {
 	Input      string
 	SourceDir  string
 	OutputDir  string
@@ -66,7 +66,7 @@ type FetchDepsParams struct {
 }
 
 // Run the Hermeto fetch-deps command.
-func (hc *HermetoCli) FetchDeps(params *FetchDepsParams) error {
+func (hc *HermetoCli) FetchDeps(params *HermetoFetchDepsParams) error {
 	logLevel := logger.Logger.GetLevel().String()
 
 	args := []string{
@@ -105,7 +105,7 @@ const (
 	Json EnvFileFormat = "json"
 )
 
-type GenerateEnvParams struct {
+type HermetoGenerateEnvParams struct {
 	OutputDir    string
 	ForOutputDir string
 	Format       EnvFileFormat
@@ -113,7 +113,7 @@ type GenerateEnvParams struct {
 }
 
 // Run the Hermeto generate-env command.
-func (hc *HermetoCli) GenerateEnv(params *GenerateEnvParams) error {
+func (hc *HermetoCli) GenerateEnv(params *HermetoGenerateEnvParams) error {
 	logLevel := logger.Logger.GetLevel().String()
 
 	args := []string{
@@ -134,13 +134,13 @@ func (hc *HermetoCli) GenerateEnv(params *GenerateEnvParams) error {
 	return err
 }
 
-type InjectFilesParams struct {
+type HermetoInjectFilesParams struct {
 	OutputDir    string
 	ForOutputDir string
 }
 
 // Run the Hermeto inject-files command.
-func (hc *HermetoCli) InjectFiles(params *InjectFilesParams) error {
+func (hc *HermetoCli) InjectFiles(params *HermetoInjectFilesParams) error {
 	logLevel := logger.Logger.GetLevel().String()
 
 	args := []string{
