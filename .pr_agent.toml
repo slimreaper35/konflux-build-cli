@@ -1,0 +1,18 @@
+# https://docs.qodo.ai/qodo-documentation/code-review/concepts/configuration/configuration-file
+
+[github_app]
+# By default, Qodo generates both a PR description and a PR review.
+# Keep only the review to reduce noise. Description can be generated on demand
+# by commenting /agentic_describe.
+pr_commands = [
+    "/agentic_review",
+]
+
+[review_agent]
+# Post both a summary review comment and inline review comments
+comments_location_policy = "both"
+# Post only the most critical comments inline. Available values:
+#   3=action_required
+#   2=remediation_recommended
+#   1=informational
+inline_comments_severity_threshold = 3
