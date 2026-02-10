@@ -571,6 +571,80 @@ LABEL test.label="build-args-test"
 		Expect(containerfileLabels).To(ContainElements(expectedLabels))
 	})
 
+	t.Run("PlatformBuildArgs", func(t *testing.T) {
+		contextDir := setupTestContext(t)
+
+		writeContainerfile(contextDir, `
+FROM scratch
+
+ARG TARGETPLATFORM
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
+ARG BUILDPLATFORM
+ARG BUILDOS
+ARG BUILDARCH
+ARG BUILDVARIANT
+
+LABEL TARGETPLATFORM=$TARGETPLATFORM
+LABEL TARGETOS=$TARGETOS
+LABEL TARGETARCH=$TARGETARCH
+LABEL TARGETVARIANT=$TARGETVARIANT
+LABEL BUILDPLATFORM=$BUILDPLATFORM
+LABEL BUILDOS=$BUILDOS
+LABEL BUILDARCH=$BUILDARCH
+LABEL BUILDVARIANT=$BUILDVARIANT
+
+LABEL test.label="platform-build-args-test"
+`)
+
+		outputRef := "localhost/test-image-platform-build-args:" + GenerateUniqueTag(t)
+		containerfileJsonPath := "/workspace/parsed-containerfile.json"
+
+		buildParams := BuildParams{
+			Context:                 contextDir,
+			OutputRef:               outputRef,
+			Push:                    false,
+			ContainerfileJsonOutput: containerfileJsonPath,
+		}
+
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
+
+		// Verify platform values match between the parsed Containerfile and the actual image
+		imageLabels := getImageLabels(container, outputRef)
+		containerfileLabels := getContainerfileLabels(container, containerfileJsonPath)
+
+		labelsToCheck := []string{
+			"TARGETPLATFORM",
+			"TARGETOS",
+			"TARGETARCH",
+			"TARGETVARIANT",
+			"BUILDPLATFORM",
+			"BUILDOS",
+			"BUILDARCH",
+			"BUILDVARIANT",
+		}
+
+		for _, label := range labelsToCheck {
+			imageLabel := imageLabels[label]
+			containerfileLabel := containerfileLabels[label]
+
+			// the *VARIANT values will be empty on platforms other than ARM
+			expectEmpty := strings.HasSuffix(label, "VARIANT") && runtime.GOARCH != "arm"
+			if !expectEmpty {
+				Expect(imageLabel).ToNot(BeEmpty(), fmt.Sprintf("label %s is empty on the built image", label))
+				Expect(containerfileLabel).ToNot(BeEmpty(), fmt.Sprintf("label %s is empty in the containerfile JSON", label))
+			}
+
+			Expect(imageLabel).To(Equal(containerfileLabel),
+				fmt.Sprintf("image label: %s=%s; containerfile label: %s=%s", label, imageLabel, label, containerfileLabel),
+			)
+		}
+	})
+
 	t.Run("ContainerfileJsonOutput", func(t *testing.T) {
 		contextDir := setupTestContext(t)
 

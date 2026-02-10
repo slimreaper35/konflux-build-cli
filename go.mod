@@ -5,6 +5,7 @@ go 1.23.3
 toolchain go1.24.6
 
 require (
+	github.com/containerd/platforms v1.0.0-rc.2
 	github.com/containers/image/v5 v5.36.2
 	github.com/keilerkonzept/dockerfile-json v1.2.2
 	github.com/onsi/gomega v1.38.0
@@ -16,6 +17,7 @@ require (
 
 require (
 	github.com/agext/levenshtein v1.2.3 // indirect
+	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
 	github.com/containers/storage v1.59.1 // indirect
 	github.com/docker/go-units v0.5.0 // indirect

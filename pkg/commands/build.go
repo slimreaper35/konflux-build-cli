@@ -13,6 +13,7 @@ import (
 	"github.com/konflux-ci/konflux-build-cli/pkg/common"
 	"github.com/spf13/cobra"
 
+	"github.com/containerd/platforms"
 	"github.com/keilerkonzept/dockerfile-json/pkg/buildargs"
 	"github.com/keilerkonzept/dockerfile-json/pkg/dockerfile"
 	l "github.com/konflux-ci/konflux-build-cli/pkg/logger"
@@ -426,9 +427,23 @@ func (c *Build) parseContainerfile() (*dockerfile.Dockerfile, error) {
 }
 
 func (c *Build) createBuildArgExpander() (dockerfile.SingleWordExpander, error) {
-	args := make(map[string]string)
+	// Define built-in ARG variables
+	// See https://docs.docker.com/build/building/variables/#multi-platform-build-arguments
+	platform := platforms.DefaultSpec()
+	args := map[string]string{
+		// We current don't explicitly expose the --platform flag, so the TARGET* values always
+		// match the BUILD* values. If we add --platform handling, we would want to respect it here.
+		"TARGETPLATFORM": platforms.Format(platform),
+		"TARGETOS":       platform.OS,
+		"TARGETARCH":     platform.Architecture,
+		"TARGETVARIANT":  platform.Variant,
+		"BUILDPLATFORM":  platforms.Format(platform),
+		"BUILDOS":        platform.OS,
+		"BUILDARCH":      platform.Architecture,
+		"BUILDVARIANT":   platform.Variant,
+	}
 
-	// Load from --build-args-file
+	// Load from --build-args-file, can override built-in args
 	if c.Params.BuildArgsFile != "" {
 		fileArgs, err := buildargs.ParseBuildArgFile(c.Params.BuildArgsFile)
 		if err != nil {
@@ -437,7 +452,7 @@ func (c *Build) createBuildArgExpander() (dockerfile.SingleWordExpander, error) 
 		maps.Copy(args, fileArgs)
 	}
 
-	// CLI --build-args take precedence
+	// CLI --build-args take precedence over everything else
 	for _, arg := range c.Params.BuildArgs {
 		key, value, hasValue := strings.Cut(arg, "=")
 		if hasValue {

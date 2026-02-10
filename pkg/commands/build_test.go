@@ -673,6 +673,75 @@ func Test_Build_createBuildArgExpander(t *testing.T) {
 		g.Expect(value).To(Equal("from-file"))
 	})
 
+	t.Run("should provide built-in platform args by default", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{},
+		}
+
+		expander, err := c.createBuildArgExpander()
+		g.Expect(err).ToNot(HaveOccurred())
+
+		// Check that all built-in platform args are available
+		platformArgs := []string{
+			"TARGETPLATFORM", "TARGETOS", "TARGETARCH", "TARGETVARIANT",
+			"BUILDPLATFORM", "BUILDOS", "BUILDARCH", "BUILDVARIANT",
+		}
+
+		for _, arg := range platformArgs {
+			value, err := expander(arg)
+			// TARGETVARIANT and BUILDVARIANT can be empty on non-ARM platforms
+			if arg == "TARGETVARIANT" || arg == "BUILDVARIANT" {
+				g.Expect(err).ToNot(HaveOccurred())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(value).ToNot(BeEmpty(), "arg %s should not be empty", arg)
+			}
+		}
+	})
+
+	t.Run("should allow file args to override built-in platform args", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"build-args": "TARGETOS=custom-os\nTARGETARCH=custom-arch\n",
+		})
+
+		c := &Build{
+			Params: &BuildParams{
+				BuildArgsFile: filepath.Join(tempDir, "build-args"),
+			},
+		}
+
+		expander, err := c.createBuildArgExpander()
+		g.Expect(err).ToNot(HaveOccurred())
+
+		value, err := expander("TARGETOS")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(value).To(Equal("custom-os"))
+
+		value, err = expander("TARGETARCH")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(value).To(Equal("custom-arch"))
+	})
+
+	t.Run("should allow CLI args to override built-in platform args", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				BuildArgs: []string{"TARGETOS=custom-os", "TARGETARCH=custom-arch"},
+			},
+		}
+
+		expander, err := c.createBuildArgExpander()
+		g.Expect(err).ToNot(HaveOccurred())
+
+		value, err := expander("TARGETOS")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(value).To(Equal("custom-os"))
+
+		value, err = expander("TARGETARCH")
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(value).To(Equal("custom-arch"))
+	})
+
 	t.Run("should return error for undefined build arg", func(t *testing.T) {
 		c := &Build{
 			Params: &BuildParams{},
