@@ -42,27 +42,13 @@ func (hc *HermetoCli) Version() error {
 	return err
 }
 
-type Mode string
-
-const (
-	Strict     Mode = "strict"
-	Permissive Mode = "permissive"
-)
-
-type SBOMFormat string
-
-const (
-	SPDX      SBOMFormat = "spdx"
-	CycloneDX SBOMFormat = "cyclonedx"
-)
-
 type HermetoFetchDepsParams struct {
 	Input      string
 	SourceDir  string
 	OutputDir  string
 	ConfigFile string
-	SBOMFormat SBOMFormat
-	Mode       Mode
+	SBOMFormat string
+	Mode       string
 }
 
 // Run the Hermeto fetch-deps command.
@@ -73,7 +59,7 @@ func (hc *HermetoCli) FetchDeps(params *HermetoFetchDepsParams) error {
 		"--log-level",
 		logLevel,
 		"--mode",
-		string(params.Mode),
+		params.Mode,
 	}
 
 	// Make the config file optional.
@@ -86,7 +72,7 @@ func (hc *HermetoCli) FetchDeps(params *HermetoFetchDepsParams) error {
 		"fetch-deps",
 		params.Input,
 		"--sbom-output-type",
-		string(params.SBOMFormat),
+		params.SBOMFormat,
 		"--source",
 		params.SourceDir,
 		"--output",
@@ -98,17 +84,10 @@ func (hc *HermetoCli) FetchDeps(params *HermetoFetchDepsParams) error {
 	return err
 }
 
-type EnvFileFormat string
-
-const (
-	Env  EnvFileFormat = "env"
-	Json EnvFileFormat = "json"
-)
-
 type HermetoGenerateEnvParams struct {
 	OutputDir    string
 	ForOutputDir string
-	Format       EnvFileFormat
+	Format       string
 	Output       string
 }
 
@@ -124,7 +103,7 @@ func (hc *HermetoCli) GenerateEnv(params *HermetoGenerateEnvParams) error {
 		"--for-output-dir",
 		params.ForOutputDir,
 		"--format",
-		string(params.Format),
+		params.Format,
 		"--output",
 		params.Output,
 	}

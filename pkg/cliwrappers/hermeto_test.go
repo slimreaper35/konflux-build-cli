@@ -54,8 +54,8 @@ func TestHermetoCliFetchDepsArgs(t *testing.T) {
 		SourceDir:  "/source",
 		OutputDir:  "/output",
 		ConfigFile: "/config.yaml",
-		SBOMFormat: cliwrappers.SPDX,
-		Mode:       cliwrappers.Strict,
+		SBOMFormat: "spdx",
+		Mode:       "strict",
 	}
 
 	err := hermetoCli.FetchDeps(params)
@@ -94,7 +94,7 @@ func TestHermetoCliGenerateEnvArgs(t *testing.T) {
 	params := &cliwrappers.HermetoGenerateEnvParams{
 		OutputDir:    "/output",
 		ForOutputDir: "/tmp",
-		Format:       cliwrappers.Env,
+		Format:       "env",
 		Output:       "/prefetch.env",
 	}
 
