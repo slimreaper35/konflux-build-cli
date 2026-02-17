@@ -38,6 +38,7 @@ type BuildParams struct {
 	Annotations             []string
 	ImageSource             string
 	ImageRevision           string
+	QuayImageExpiresAfter   string
 	AddLegacyLabels         bool
 	ContainerfileJsonOutput string
 	ExtraArgs               []string
@@ -181,6 +182,9 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	}
 	if buildParams.ImageRevision != "" {
 		args = append(args, "--image-revision", buildParams.ImageRevision)
+	}
+	if buildParams.QuayImageExpiresAfter != "" {
+		args = append(args, "--quay-image-expires-after", buildParams.QuayImageExpiresAfter)
 	}
 	if buildParams.AddLegacyLabels {
 		args = append(args, "--add-legacy-labels")
@@ -845,8 +849,9 @@ LABEL test.label="envs-test"
 				"org.opencontainers.image.title=King Arthur",
 				"org.opencontainers.image.description=Elected by farcical aquatic ceremony.",
 			},
-			ImageSource:   "https://github.com/konflux-ci/test",
-			ImageRevision: "abc123",
+			ImageSource:           "https://github.com/konflux-ci/test",
+			ImageRevision:         "abc123",
+			QuayImageExpiresAfter: "2w",
 		}
 
 		container := setupBuildContainerWithCleanup(t, buildParams, nil)
@@ -863,6 +868,7 @@ LABEL test.label="envs-test"
 			// default labels (with user-supplied values)
 			"org.opencontainers.image.source=https://github.com/konflux-ci/test",
 			"org.opencontainers.image.revision=abc123",
+			"quay.expires-after=2w",
 		))
 
 		imageAnnotations := formatAsKeyValuePairs(imageMeta.annotations)

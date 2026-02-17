@@ -116,6 +116,13 @@ var BuildParamsConfig = map[string]common.Parameter{
 		TypeKind:   reflect.String,
 		Usage:      "Set the org.opencontainers.image.revision annotation (and label) to this value.",
 	},
+	"quay-image-expires-after": {
+		Name:       "quay-image-expires-after",
+		ShortName:  "",
+		EnvVarName: "KBC_BUILD_QUAY_IMAGE_EXPIRES_AFTER",
+		TypeKind:   reflect.String,
+		Usage:      "Time after which the image expires on quay.io (e.g. 1h, 2d, 3w). Adds the quay.expires-after label.",
+	},
 	"add-legacy-labels": {
 		Name:         "add-legacy-labels",
 		ShortName:    "",
@@ -147,6 +154,7 @@ type BuildParams struct {
 	Annotations             []string `paramName:"annotations"`
 	ImageSource             string   `paramName:"image-source"`
 	ImageRevision           string   `paramName:"image-revision"`
+	QuayImageExpiresAfter   string   `paramName:"quay-image-expires-after"`
 	AddLegacyLabels         bool     `paramName:"add-legacy-labels"`
 	ContainerfileJsonOutput string   `paramName:"containerfile-json-output"`
 	ExtraArgs               []string // Additional arguments to pass to buildah build
@@ -286,6 +294,9 @@ func (c *Build) logParams() {
 	}
 	if c.Params.ImageRevision != "" {
 		l.Logger.Infof("[param] ImageRevision: %s", c.Params.ImageRevision)
+	}
+	if c.Params.QuayImageExpiresAfter != "" {
+		l.Logger.Infof("[param] QuayImageExpiresAfter: %s", c.Params.QuayImageExpiresAfter)
 	}
 	if c.Params.AddLegacyLabels {
 		l.Logger.Infof("[param] AddLegacyLabels: %t", c.Params.AddLegacyLabels)
@@ -580,6 +591,10 @@ func (c *Build) mergeDefaultLabelsAndAnnotations() ([]string, []string) {
 
 		defaultAnnotations = append(defaultAnnotations, ociRevision)
 		defaultLabels = append(defaultLabels, ociRevision)
+	}
+
+	if c.Params.QuayImageExpiresAfter != "" {
+		defaultLabels = append(defaultLabels, "quay.expires-after="+c.Params.QuayImageExpiresAfter)
 	}
 
 	if c.Params.AddLegacyLabels {

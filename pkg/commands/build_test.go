@@ -1148,4 +1148,19 @@ func Test_Build_mergeDefaultLabelsAndAnnotations(t *testing.T) {
 			"org.opencontainers.image.revision=abc123",
 		}))
 	})
+
+	t.Run("should add quay.expires-after label when provided", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				QuayImageExpiresAfter: "2w",
+			},
+		}
+
+		labels, annotations := c.mergeDefaultLabelsAndAnnotations()
+
+		g.Expect(labels).To(Equal([]string{
+			"quay.expires-after=2w",
+		}))
+		g.Expect(annotations).To(BeEmpty())
+	})
 }
