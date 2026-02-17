@@ -102,6 +102,28 @@ var BuildParamsConfig = map[string]common.Parameter{
 		TypeKind:   reflect.Slice,
 		Usage:      "Annotations to apply to the image using buildah's --annotation option.",
 	},
+	"image-source": {
+		Name:       "image-source",
+		ShortName:  "",
+		EnvVarName: "KBC_BUILD_IMAGE_SOURCE",
+		TypeKind:   reflect.String,
+		Usage:      "Set the org.opencontainers.image.source annotation (and label) to this value.",
+	},
+	"image-revision": {
+		Name:       "image-revision",
+		ShortName:  "",
+		EnvVarName: "KBC_BUILD_IMAGE_REVISION",
+		TypeKind:   reflect.String,
+		Usage:      "Set the org.opencontainers.image.revision annotation (and label) to this value.",
+	},
+	"add-legacy-labels": {
+		Name:         "add-legacy-labels",
+		ShortName:    "",
+		EnvVarName:   "KBC_BUILD_ADD_LEGACY_LABELS",
+		TypeKind:     reflect.Bool,
+		DefaultValue: "false",
+		Usage:        "In addition to OCI annotations and labels, also set projectatomic labels (https://github.com/projectatomic/ContainerApplicationGenericLabels).",
+	},
 	"containerfile-json-output": {
 		Name:       "containerfile-json-output",
 		ShortName:  "",
@@ -123,6 +145,9 @@ type BuildParams struct {
 	Envs                    []string `paramName:"envs"`
 	Labels                  []string `paramName:"labels"`
 	Annotations             []string `paramName:"annotations"`
+	ImageSource             string   `paramName:"image-source"`
+	ImageRevision           string   `paramName:"image-revision"`
+	AddLegacyLabels         bool     `paramName:"add-legacy-labels"`
 	ContainerfileJsonOutput string   `paramName:"containerfile-json-output"`
 	ExtraArgs               []string // Additional arguments to pass to buildah build
 }
@@ -255,6 +280,15 @@ func (c *Build) logParams() {
 	}
 	if len(c.Params.Annotations) > 0 {
 		l.Logger.Infof("[param] Annotations: %v", c.Params.Annotations)
+	}
+	if c.Params.ImageSource != "" {
+		l.Logger.Infof("[param] ImageSource: %s", c.Params.ImageSource)
+	}
+	if c.Params.ImageRevision != "" {
+		l.Logger.Infof("[param] ImageRevision: %s", c.Params.ImageRevision)
+	}
+	if c.Params.AddLegacyLabels {
+		l.Logger.Infof("[param] AddLegacyLabels: %t", c.Params.AddLegacyLabels)
 	}
 	if c.Params.ContainerfileJsonOutput != "" {
 		l.Logger.Infof("[param] ContainerfileJsonOutput: %s", c.Params.ContainerfileJsonOutput)
@@ -518,6 +552,58 @@ func processKeyValueEnvs(args []string) map[string]string {
 	return values
 }
 
+// Prepends default labels and annotations to the user-provided arrays.
+// User-provided values override defaults via buildah's "last value wins" behavior.
+//
+// The default annotations are primarily based on the OCI annotation spec:
+// https://specs.opencontainers.org/image-spec/annotations/
+//
+// Note that we also add them as labels, not just annotations. When distributing images
+// in the docker format rather than the OCI format, annotations disappear, so the information
+// is at least preserved as labels.
+//
+// In addition to the OCI annotations (and labels), if AddLegacyLabels is enabled,
+// adds labels based on https://github.com/projectatomic/ContainerApplicationGenericLabels.
+func (c *Build) mergeDefaultLabelsAndAnnotations() ([]string, []string) {
+	var defaultLabels []string
+	var defaultAnnotations []string
+
+	if c.Params.ImageSource != "" {
+		ociSource := "org.opencontainers.image.source=" + c.Params.ImageSource
+
+		defaultAnnotations = append(defaultAnnotations, ociSource)
+		defaultLabels = append(defaultLabels, ociSource)
+	}
+
+	if c.Params.ImageRevision != "" {
+		ociRevision := "org.opencontainers.image.revision=" + c.Params.ImageRevision
+
+		defaultAnnotations = append(defaultAnnotations, ociRevision)
+		defaultLabels = append(defaultLabels, ociRevision)
+	}
+
+	if c.Params.AddLegacyLabels {
+		if c.Params.ImageSource != "" {
+			defaultLabels = append(defaultLabels, "vcs-url="+c.Params.ImageSource)
+		}
+
+		if c.Params.ImageRevision != "" {
+			defaultLabels = append(defaultLabels, "vcs-ref="+c.Params.ImageRevision)
+		}
+
+		if c.Params.ImageSource != "" || c.Params.ImageRevision != "" {
+			// We don't know if it's git, but this label serves no purpose other than
+			// to appease the default Red Hat label policy, so it doesn't really matter.
+			// https://github.com/release-engineering/rhtap-ec-policy/blob/25b163398303105a539998f1a276f176bf3384b2/data/rule_data.yml#L103
+			defaultLabels = append(defaultLabels, "vcs-type=git")
+		}
+	}
+
+	mergedLabels := append(defaultLabels, c.Params.Labels...)
+	mergedAnnotations := append(defaultAnnotations, c.Params.Annotations...)
+	return mergedLabels, mergedAnnotations
+}
+
 func (c *Build) buildImage() error {
 	l.Logger.Info("Building container image...")
 
@@ -530,6 +616,8 @@ func (c *Build) buildImage() error {
 	}
 	defer os.Chdir(originalCwd)
 
+	mergedLabels, mergedAnnotations := c.mergeDefaultLabelsAndAnnotations()
+
 	buildArgs := &cliWrappers.BuildahBuildArgs{
 		Containerfile: c.containerfilePath,
 		ContextDir:    c.Params.Context,
@@ -538,8 +626,8 @@ func (c *Build) buildImage() error {
 		BuildArgs:     c.Params.BuildArgs,
 		BuildArgsFile: c.Params.BuildArgsFile,
 		Envs:          c.Params.Envs,
-		Labels:        c.Params.Labels,
-		Annotations:   c.Params.Annotations,
+		Labels:        mergedLabels,
+		Annotations:   mergedAnnotations,
 		ExtraArgs:     c.Params.ExtraArgs,
 	}
 	if c.Params.WorkdirMount != "" {

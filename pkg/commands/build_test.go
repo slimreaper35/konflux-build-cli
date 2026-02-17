@@ -1057,3 +1057,95 @@ func Test_Build_Run(t *testing.T) {
 		g.Expect(restoredDir).To(Equal(tempDir))
 	})
 }
+
+func Test_Build_mergeDefaultLabelsAndAnnotations(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should add default labels and annotations", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				ImageSource:   "https://github.com/org/repo",
+				ImageRevision: "abc123",
+			},
+		}
+
+		labels, annotations := c.mergeDefaultLabelsAndAnnotations()
+
+		g.Expect(labels).To(Equal([]string{
+			"org.opencontainers.image.source=https://github.com/org/repo",
+			"org.opencontainers.image.revision=abc123",
+		}))
+		g.Expect(annotations).To(Equal([]string{
+			"org.opencontainers.image.source=https://github.com/org/repo",
+			"org.opencontainers.image.revision=abc123",
+		}))
+	})
+
+	t.Run("should not add labels or annotations if their values aren't provided", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{},
+		}
+
+		labels, annotations := c.mergeDefaultLabelsAndAnnotations()
+
+		g.Expect(labels).To(BeEmpty())
+		g.Expect(annotations).To(BeEmpty())
+	})
+
+	t.Run("should prepend defaults to let user-provided values override them", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				ImageSource:   "https://github.com/org/repo",
+				ImageRevision: "abc123",
+				Labels: []string{
+					"some-label=foo",
+					"org.opencontainers.image.revision=main",
+				},
+				Annotations: []string{
+					"some-annotation=bar",
+					"org.opencontainers.image.source=https://github.com/other-org/other-repo",
+				},
+			},
+		}
+
+		labels, annotations := c.mergeDefaultLabelsAndAnnotations()
+
+		g.Expect(labels).To(Equal([]string{
+			"org.opencontainers.image.source=https://github.com/org/repo",
+			"org.opencontainers.image.revision=abc123",
+			"some-label=foo",
+			"org.opencontainers.image.revision=main",
+		}))
+		g.Expect(annotations).To(Equal([]string{
+			"org.opencontainers.image.source=https://github.com/org/repo",
+			"org.opencontainers.image.revision=abc123",
+			"some-annotation=bar",
+			"org.opencontainers.image.source=https://github.com/other-org/other-repo",
+		}))
+	})
+
+	t.Run("should add legacy labels when requested", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				ImageSource:     "https://github.com/org/repo",
+				ImageRevision:   "abc123",
+				AddLegacyLabels: true,
+			},
+		}
+
+		labels, annotations := c.mergeDefaultLabelsAndAnnotations()
+
+		g.Expect(labels).To(Equal([]string{
+			"org.opencontainers.image.source=https://github.com/org/repo",
+			"org.opencontainers.image.revision=abc123",
+			"vcs-url=https://github.com/org/repo",
+			"vcs-ref=abc123",
+			"vcs-type=git",
+		}))
+		// Should be added *only* as labels, not as annotations
+		g.Expect(annotations).To(Equal([]string{
+			"org.opencontainers.image.source=https://github.com/org/repo",
+			"org.opencontainers.image.revision=abc123",
+		}))
+	})
+}

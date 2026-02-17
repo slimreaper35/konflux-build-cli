@@ -36,6 +36,9 @@ type BuildParams struct {
 	Envs                    []string
 	Labels                  []string
 	Annotations             []string
+	ImageSource             string
+	ImageRevision           string
+	AddLegacyLabels         bool
 	ContainerfileJsonOutput string
 	ExtraArgs               []string
 }
@@ -172,6 +175,15 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	if len(buildParams.Annotations) > 0 {
 		args = append(args, "--annotations")
 		args = append(args, buildParams.Annotations...)
+	}
+	if buildParams.ImageSource != "" {
+		args = append(args, "--image-source", buildParams.ImageSource)
+	}
+	if buildParams.ImageRevision != "" {
+		args = append(args, "--image-revision", buildParams.ImageRevision)
+	}
+	if buildParams.AddLegacyLabels {
+		args = append(args, "--add-legacy-labels")
 	}
 	if buildParams.ContainerfileJsonOutput != "" {
 		args = append(args, "--containerfile-json-output", buildParams.ContainerfileJsonOutput)
@@ -833,6 +845,8 @@ LABEL test.label="envs-test"
 				"org.opencontainers.image.title=King Arthur",
 				"org.opencontainers.image.description=Elected by farcical aquatic ceremony.",
 			},
+			ImageSource:   "https://github.com/konflux-ci/test",
+			ImageRevision: "abc123",
 		}
 
 		container := setupBuildContainerWithCleanup(t, buildParams, nil)
@@ -846,12 +860,104 @@ LABEL test.label="envs-test"
 		Expect(imageLabels).To(ContainElements(
 			"custom.label1=value1",
 			"custom.label2=value2",
+			// default labels (with user-supplied values)
+			"org.opencontainers.image.source=https://github.com/konflux-ci/test",
+			"org.opencontainers.image.revision=abc123",
 		))
 
 		imageAnnotations := formatAsKeyValuePairs(imageMeta.annotations)
 		Expect(imageAnnotations).To(ContainElements(
 			"org.opencontainers.image.title=King Arthur",
 			"org.opencontainers.image.description=Elected by farcical aquatic ceremony.",
+			// default annotations (with user-supplied values)
+			"org.opencontainers.image.source=https://github.com/konflux-ci/test",
+			"org.opencontainers.image.revision=abc123",
+		))
+	})
+
+	t.Run("OverrideDefaultLabelsAndAnnotations", func(t *testing.T) {
+		contextDir := setupTestContext(t)
+
+		writeContainerfile(contextDir, `FROM scratch`)
+
+		outputRef := "localhost/test-override-defaults:" + GenerateUniqueTag(t)
+
+		buildParams := BuildParams{
+			Context:       contextDir,
+			OutputRef:     outputRef,
+			Push:          false,
+			ImageSource:   "https://default.com",
+			ImageRevision: "default",
+			Labels: []string{
+				// override source, but not revision
+				"org.opencontainers.image.source=https://user-override.com",
+			},
+			Annotations: []string{
+				// override revision, but not source
+				"org.opencontainers.image.revision=override",
+			},
+		}
+
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
+
+		imageMeta := getImageMeta(container, outputRef)
+
+		imageLabels := formatAsKeyValuePairs(imageMeta.labels)
+		Expect(imageLabels).To(ContainElements(
+			"org.opencontainers.image.source=https://user-override.com",
+			"org.opencontainers.image.revision=default",
+		))
+
+		imageAnnotations := formatAsKeyValuePairs(imageMeta.annotations)
+		Expect(imageAnnotations).To(ContainElements(
+			"org.opencontainers.image.source=https://default.com",
+			"org.opencontainers.image.revision=override",
+		))
+	})
+
+	t.Run("WithLegacyLabels", func(t *testing.T) {
+		contextDir := setupTestContext(t)
+
+		writeContainerfile(contextDir, `FROM scratch`)
+
+		outputRef := "localhost/test-legacy-labels:" + GenerateUniqueTag(t)
+
+		buildParams := BuildParams{
+			Context:         contextDir,
+			OutputRef:       outputRef,
+			Push:            false,
+			ImageSource:     "https://github.com/konflux-ci/test",
+			ImageRevision:   "abc123",
+			AddLegacyLabels: true,
+		}
+
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
+
+		imageMeta := getImageMeta(container, outputRef)
+
+		imageLabels := formatAsKeyValuePairs(imageMeta.labels)
+		Expect(imageLabels).To(ContainElements(
+			"org.opencontainers.image.source=https://github.com/konflux-ci/test",
+			"vcs-url=https://github.com/konflux-ci/test",
+			"org.opencontainers.image.revision=abc123",
+			"vcs-ref=abc123",
+			"vcs-type=git",
+		))
+
+		// Annotations should not include legacy labels
+		imageAnnotations := formatAsKeyValuePairs(imageMeta.annotations)
+		Expect(imageMeta.annotations).ToNot(HaveKey("vcs-url"))
+		Expect(imageMeta.annotations).ToNot(HaveKey("vcs-ref"))
+		Expect(imageMeta.annotations).ToNot(HaveKey("vcs-type"))
+		Expect(imageAnnotations).To(ContainElements(
+			"org.opencontainers.image.source=https://github.com/konflux-ci/test",
+			"org.opencontainers.image.revision=abc123",
 		))
 	})
 }
