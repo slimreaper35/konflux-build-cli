@@ -38,6 +38,7 @@ type BuildParams struct {
 	Annotations             []string
 	ImageSource             string
 	ImageRevision           string
+	LegacyBuildTimestamp    string
 	QuayImageExpiresAfter   string
 	AddLegacyLabels         bool
 	ContainerfileJsonOutput string
@@ -182,6 +183,9 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	}
 	if buildParams.ImageRevision != "" {
 		args = append(args, "--image-revision", buildParams.ImageRevision)
+	}
+	if buildParams.LegacyBuildTimestamp != "" {
+		args = append(args, "--legacy-build-timestamp", buildParams.LegacyBuildTimestamp)
 	}
 	if buildParams.QuayImageExpiresAfter != "" {
 		args = append(args, "--quay-image-expires-after", buildParams.QuayImageExpiresAfter)
@@ -851,6 +855,7 @@ LABEL test.label="envs-test"
 			},
 			ImageSource:           "https://github.com/konflux-ci/test",
 			ImageRevision:         "abc123",
+			LegacyBuildTimestamp:  "1767225600", // 2026-01-01
 			QuayImageExpiresAfter: "2w",
 		}
 
@@ -868,6 +873,7 @@ LABEL test.label="envs-test"
 			// default labels (with user-supplied values)
 			"org.opencontainers.image.source=https://github.com/konflux-ci/test",
 			"org.opencontainers.image.revision=abc123",
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
 			"quay.expires-after=2w",
 		))
 
@@ -878,6 +884,7 @@ LABEL test.label="envs-test"
 			// default annotations (with user-supplied values)
 			"org.opencontainers.image.source=https://github.com/konflux-ci/test",
 			"org.opencontainers.image.revision=abc123",
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
 		))
 	})
 
@@ -932,12 +939,13 @@ LABEL test.label="envs-test"
 		outputRef := "localhost/test-legacy-labels:" + GenerateUniqueTag(t)
 
 		buildParams := BuildParams{
-			Context:         contextDir,
-			OutputRef:       outputRef,
-			Push:            false,
-			ImageSource:     "https://github.com/konflux-ci/test",
-			ImageRevision:   "abc123",
-			AddLegacyLabels: true,
+			Context:              contextDir,
+			OutputRef:            outputRef,
+			Push:                 false,
+			ImageSource:          "https://github.com/konflux-ci/test",
+			ImageRevision:        "abc123",
+			LegacyBuildTimestamp: "1767225600", // 2026-01-01
+			AddLegacyLabels:      true,
 		}
 
 		container := setupBuildContainerWithCleanup(t, buildParams, nil)
@@ -964,6 +972,8 @@ LABEL test.label="envs-test"
 			"org.opencontainers.image.revision=abc123",
 			"vcs-ref=abc123",
 			"vcs-type=git",
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
+			"build-date=2026-01-01T00:00:00Z",
 		))
 
 		// Annotations should not include legacy labels
@@ -972,9 +982,11 @@ LABEL test.label="envs-test"
 		Expect(imageMeta.annotations).ToNot(HaveKey("vcs-url"))
 		Expect(imageMeta.annotations).ToNot(HaveKey("vcs-ref"))
 		Expect(imageMeta.annotations).ToNot(HaveKey("vcs-type"))
+		Expect(imageMeta.annotations).ToNot(HaveKey("build-date"))
 		Expect(imageAnnotations).To(ContainElements(
 			"org.opencontainers.image.source=https://github.com/konflux-ci/test",
 			"org.opencontainers.image.revision=abc123",
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
 		))
 	})
 }

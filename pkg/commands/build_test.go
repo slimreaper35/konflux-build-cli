@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/konflux-ci/konflux-build-cli/pkg/cliwrappers"
 	"github.com/konflux-ci/konflux-build-cli/testutil"
@@ -1082,42 +1084,57 @@ func Test_goArchToArchitectureLabel(t *testing.T) {
 func Test_Build_mergeDefaultLabelsAndAnnotations(t *testing.T) {
 	g := NewWithT(t)
 
-	t.Run("should add default labels and annotations", func(t *testing.T) {
+	t.Run("should add default labels and annotations with provided values", func(t *testing.T) {
 		c := &Build{
 			Params: &BuildParams{
-				ImageSource:   "https://github.com/org/repo",
-				ImageRevision: "abc123",
+				LegacyBuildTimestamp: "1767225600", // 2026-01-01
+				ImageSource:          "https://github.com/org/repo",
+				ImageRevision:        "abc123",
 			},
 		}
 
-		labels, annotations := c.mergeDefaultLabelsAndAnnotations()
+		labels, annotations, err := c.mergeDefaultLabelsAndAnnotations()
+		g.Expect(err).ToNot(HaveOccurred())
 
 		g.Expect(labels).To(Equal([]string{
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
 			"org.opencontainers.image.source=https://github.com/org/repo",
 			"org.opencontainers.image.revision=abc123",
 		}))
 		g.Expect(annotations).To(Equal([]string{
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
 			"org.opencontainers.image.source=https://github.com/org/repo",
 			"org.opencontainers.image.revision=abc123",
 		}))
 	})
 
-	t.Run("should not add labels or annotations if their values aren't provided", func(t *testing.T) {
+	t.Run("should always add creation time label and annotation", func(t *testing.T) {
 		c := &Build{
 			Params: &BuildParams{},
 		}
 
-		labels, annotations := c.mergeDefaultLabelsAndAnnotations()
+		labels, annotations, err := c.mergeDefaultLabelsAndAnnotations()
+		g.Expect(err).ToNot(HaveOccurred())
 
-		g.Expect(labels).To(BeEmpty())
-		g.Expect(annotations).To(BeEmpty())
+		g.Expect(labels).To(ConsistOf(
+			MatchRegexp(`^org.opencontainers.image.created=.+Z$`),
+		))
+		g.Expect(annotations).To(Equal(labels))
+
+		imageCreated := labels[0]
+
+		_, rfc3339time, _ := strings.Cut(imageCreated, "=")
+		timestamp, err := time.Parse(time.RFC3339, rfc3339time)
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(timestamp).To(BeTemporally("~", time.Now(), time.Second))
 	})
 
 	t.Run("should prepend defaults to let user-provided values override them", func(t *testing.T) {
 		c := &Build{
 			Params: &BuildParams{
-				ImageSource:   "https://github.com/org/repo",
-				ImageRevision: "abc123",
+				LegacyBuildTimestamp: "1767225600", // 2026-01-01
+				ImageSource:          "https://github.com/org/repo",
+				ImageRevision:        "abc123",
 				Labels: []string{
 					"some-label=foo",
 					"org.opencontainers.image.revision=main",
@@ -1125,41 +1142,50 @@ func Test_Build_mergeDefaultLabelsAndAnnotations(t *testing.T) {
 				Annotations: []string{
 					"some-annotation=bar",
 					"org.opencontainers.image.source=https://github.com/other-org/other-repo",
+					"org.opencontainers.image.created=1990-01-01T00:00:00Z",
 				},
 			},
 		}
 
-		labels, annotations := c.mergeDefaultLabelsAndAnnotations()
+		labels, annotations, err := c.mergeDefaultLabelsAndAnnotations()
+		g.Expect(err).ToNot(HaveOccurred())
 
 		g.Expect(labels).To(Equal([]string{
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
 			"org.opencontainers.image.source=https://github.com/org/repo",
 			"org.opencontainers.image.revision=abc123",
 			"some-label=foo",
 			"org.opencontainers.image.revision=main",
 		}))
 		g.Expect(annotations).To(Equal([]string{
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
 			"org.opencontainers.image.source=https://github.com/org/repo",
 			"org.opencontainers.image.revision=abc123",
 			"some-annotation=bar",
 			"org.opencontainers.image.source=https://github.com/other-org/other-repo",
+			"org.opencontainers.image.created=1990-01-01T00:00:00Z",
 		}))
 	})
 
 	t.Run("should add legacy labels when requested", func(t *testing.T) {
 		c := &Build{
 			Params: &BuildParams{
-				ImageSource:     "https://github.com/org/repo",
-				ImageRevision:   "abc123",
-				AddLegacyLabels: true,
+				LegacyBuildTimestamp: "1767225600", // 2026-01-01
+				ImageSource:          "https://github.com/org/repo",
+				ImageRevision:        "abc123",
+				AddLegacyLabels:      true,
 			},
 		}
 
-		labels, annotations := c.mergeDefaultLabelsAndAnnotations()
+		labels, annotations, err := c.mergeDefaultLabelsAndAnnotations()
+		g.Expect(err).ToNot(HaveOccurred())
 
 		arch := goArchToArchitectureLabel(runtime.GOARCH)
 		g.Expect(labels).To(Equal([]string{
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
 			"org.opencontainers.image.source=https://github.com/org/repo",
 			"org.opencontainers.image.revision=abc123",
+			"build-date=2026-01-01T00:00:00Z",
 			"architecture=" + arch,
 			"vcs-url=https://github.com/org/repo",
 			"vcs-ref=abc123",
@@ -1167,6 +1193,7 @@ func Test_Build_mergeDefaultLabelsAndAnnotations(t *testing.T) {
 		}))
 		// Should be added *only* as labels, not as annotations
 		g.Expect(annotations).To(Equal([]string{
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
 			"org.opencontainers.image.source=https://github.com/org/repo",
 			"org.opencontainers.image.revision=abc123",
 		}))
@@ -1179,11 +1206,22 @@ func Test_Build_mergeDefaultLabelsAndAnnotations(t *testing.T) {
 			},
 		}
 
-		labels, annotations := c.mergeDefaultLabelsAndAnnotations()
+		labels, annotations, err := c.mergeDefaultLabelsAndAnnotations()
+		g.Expect(err).ToNot(HaveOccurred())
 
-		g.Expect(labels).To(Equal([]string{
-			"quay.expires-after=2w",
-		}))
-		g.Expect(annotations).To(BeEmpty())
+		g.Expect(labels).To(ContainElement("quay.expires-after=2w"))
+		g.Expect(annotations).ToNot(ContainElement("quay.expires-after=2w"))
+	})
+
+	t.Run("should return error for invalid legacy-build-timestamp", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				LegacyBuildTimestamp: "1767225600.5",
+			},
+		}
+
+		_, _, err := c.mergeDefaultLabelsAndAnnotations()
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("determining build timestamp: parsing legacy-build-timestamp:"))
 	})
 }

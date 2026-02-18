@@ -8,7 +8,9 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 
 	cliWrappers "github.com/konflux-ci/konflux-build-cli/pkg/cliwrappers"
 	"github.com/konflux-ci/konflux-build-cli/pkg/common"
@@ -117,6 +119,13 @@ var BuildParamsConfig = map[string]common.Parameter{
 		TypeKind:   reflect.String,
 		Usage:      "Set the org.opencontainers.image.revision annotation (and label) to this value.",
 	},
+	"legacy-build-timestamp": {
+		Name:       "legacy-build-timestamp",
+		ShortName:  "",
+		EnvVarName: "KBC_BUILD_LEGACY_BUILD_TIMESTAMP",
+		TypeKind:   reflect.String,
+		Usage:      "Timestamp for the org.opencontainers.image.created annotation (and label). If not provided, uses the current time.\nThis does NOT behave like buildah's --timestamp option, it only sets the annotation and label.",
+	},
 	"quay-image-expires-after": {
 		Name:       "quay-image-expires-after",
 		ShortName:  "",
@@ -155,6 +164,7 @@ type BuildParams struct {
 	Annotations             []string `paramName:"annotations"`
 	ImageSource             string   `paramName:"image-source"`
 	ImageRevision           string   `paramName:"image-revision"`
+	LegacyBuildTimestamp    string   `paramName:"legacy-build-timestamp"`
 	QuayImageExpiresAfter   string   `paramName:"quay-image-expires-after"`
 	AddLegacyLabels         bool     `paramName:"add-legacy-labels"`
 	ContainerfileJsonOutput string   `paramName:"containerfile-json-output"`
@@ -298,6 +308,9 @@ func (c *Build) logParams() {
 	}
 	if c.Params.QuayImageExpiresAfter != "" {
 		l.Logger.Infof("[param] QuayImageExpiresAfter: %s", c.Params.QuayImageExpiresAfter)
+	}
+	if c.Params.LegacyBuildTimestamp != "" {
+		l.Logger.Infof("[param] LegacyBuildTimestamp: %s", c.Params.LegacyBuildTimestamp)
 	}
 	if c.Params.AddLegacyLabels {
 		l.Logger.Infof("[param] AddLegacyLabels: %t", c.Params.AddLegacyLabels)
@@ -576,9 +589,17 @@ func processKeyValueEnvs(args []string) map[string]string {
 //
 // In addition to the OCI annotations (and labels), if AddLegacyLabels is enabled,
 // adds labels based on https://github.com/projectatomic/ContainerApplicationGenericLabels.
-func (c *Build) mergeDefaultLabelsAndAnnotations() ([]string, []string) {
+func (c *Build) mergeDefaultLabelsAndAnnotations() ([]string, []string, error) {
 	var defaultLabels []string
 	var defaultAnnotations []string
+
+	buildTimeStr, err := c.getBuildTimeRFC3339()
+	if err != nil {
+		return nil, nil, fmt.Errorf("determining build timestamp: %w", err)
+	}
+	ociCreated := "org.opencontainers.image.created=" + buildTimeStr
+	defaultAnnotations = append(defaultAnnotations, ociCreated)
+	defaultLabels = append(defaultLabels, ociCreated)
 
 	if c.Params.ImageSource != "" {
 		ociSource := "org.opencontainers.image.source=" + c.Params.ImageSource
@@ -599,6 +620,8 @@ func (c *Build) mergeDefaultLabelsAndAnnotations() ([]string, []string) {
 	}
 
 	if c.Params.AddLegacyLabels {
+		defaultLabels = append(defaultLabels, "build-date="+buildTimeStr)
+
 		arch := goArchToArchitectureLabel(runtime.GOARCH)
 		defaultLabels = append(defaultLabels, "architecture="+arch)
 
@@ -620,7 +643,21 @@ func (c *Build) mergeDefaultLabelsAndAnnotations() ([]string, []string) {
 
 	mergedLabels := append(defaultLabels, c.Params.Labels...)
 	mergedAnnotations := append(defaultAnnotations, c.Params.Annotations...)
-	return mergedLabels, mergedAnnotations
+	return mergedLabels, mergedAnnotations, nil
+}
+
+func (c *Build) getBuildTimeRFC3339() (string, error) {
+	var buildTime time.Time
+	if c.Params.LegacyBuildTimestamp != "" {
+		timestamp, err := strconv.ParseInt(c.Params.LegacyBuildTimestamp, 10, 64)
+		if err != nil {
+			return "", fmt.Errorf("parsing legacy-build-timestamp: %w", err)
+		}
+		buildTime = time.Unix(timestamp, 0).UTC()
+	} else {
+		buildTime = time.Now().UTC()
+	}
+	return buildTime.Format(time.RFC3339), nil
 }
 
 // Convert Go's GOARCH value to the value used for the 'architecture' label.
@@ -650,7 +687,10 @@ func (c *Build) buildImage() error {
 	}
 	defer os.Chdir(originalCwd)
 
-	mergedLabels, mergedAnnotations := c.mergeDefaultLabelsAndAnnotations()
+	mergedLabels, mergedAnnotations, err := c.mergeDefaultLabelsAndAnnotations()
+	if err != nil {
+		return err
+	}
 
 	buildArgs := &cliWrappers.BuildahBuildArgs{
 		Containerfile: c.containerfilePath,
