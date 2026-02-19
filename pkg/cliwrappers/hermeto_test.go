@@ -49,13 +49,13 @@ func TestHermetoCliFetchDepsArgs(t *testing.T) {
 		return "", "", 0, nil
 	}
 
-	params := &cliwrappers.FetchDepsParams{
+	params := &cliwrappers.HermetoFetchDepsParams{
 		Input:      "gomod",
 		SourceDir:  "/source",
 		OutputDir:  "/output",
 		ConfigFile: "/config.yaml",
-		SBOMFormat: cliwrappers.SPDX,
-		Mode:       cliwrappers.Strict,
+		SBOMFormat: "spdx",
+		Mode:       "strict",
 	}
 
 	err := hermetoCli.FetchDeps(params)
@@ -91,10 +91,10 @@ func TestHermetoCliGenerateEnvArgs(t *testing.T) {
 		return "", "", 0, nil
 	}
 
-	params := &cliwrappers.GenerateEnvParams{
+	params := &cliwrappers.HermetoGenerateEnvParams{
 		OutputDir:    "/output",
 		ForOutputDir: "/tmp",
-		Format:       cliwrappers.Env,
+		Format:       "env",
 		Output:       "/prefetch.env",
 	}
 
@@ -127,7 +127,7 @@ func TestHermetoCliInjectFilesArgs(t *testing.T) {
 		return "", "", 0, nil
 	}
 
-	params := &cliwrappers.InjectFilesParams{
+	params := &cliwrappers.HermetoInjectFilesParams{
 		OutputDir:    "/output",
 		ForOutputDir: "/tmp",
 	}
