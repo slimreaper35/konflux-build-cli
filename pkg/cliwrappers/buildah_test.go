@@ -553,6 +553,39 @@ func TestBuildahCli_InspectImage(t *testing.T) {
 	})
 }
 
+func TestBuildahCli_Version(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should execute buildah version correctly", func(t *testing.T) {
+		buildahCli, executor := setupBuildahCli()
+		var capturedArgs []string
+		executor.executeFunc = func(command string, args ...string) (string, string, int, error) {
+			g.Expect(command).To(Equal("buildah"))
+			capturedArgs = args
+			jsonOutput := `{
+    "version": "1.42.2",
+    "goVersion": "go1.24.10",
+    "imageSpec": "1.1.1",
+    "runtimeSpec": "1.2.1",
+    "cniSpec": "1.1.0",
+    "libcniVersion": "",
+    "imageVersion": "5.38.0",
+    "gitCommit": "",
+    "built": "Wed Dec  3 15:03:30 2025",
+    "osArch": "linux/amd64",
+    "buildPlatform": "linux/amd64"
+}`
+			return jsonOutput, "", 0, nil
+		}
+
+		versionInfo, err := buildahCli.Version()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(capturedArgs).To(Equal([]string{"version", "--json"}))
+
+		g.Expect(versionInfo.Version).To(Equal("1.42.2"))
+	})
+}
+
 func TestBuildahBuildArgs_MakePathsAbsolute(t *testing.T) {
 	g := NewWithT(t)
 

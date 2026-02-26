@@ -20,6 +20,7 @@ type BuildahCliInterface interface {
 	Pull(args *BuildahPullArgs) error
 	Inspect(args *BuildahInspectArgs) (string, error)
 	InspectImage(name string) (BuildahImageInfo, error)
+	Version() (BuildahVersionInfo, error)
 }
 
 var _ BuildahCliInterface = &BuildahCli{}
@@ -344,4 +345,31 @@ func (b *BuildahCli) InspectImage(name string) (BuildahImageInfo, error) {
 	}
 
 	return imageInfo, nil
+}
+
+type BuildahVersionInfo struct {
+	Version string `json:"version"`
+}
+
+func (b *BuildahCli) Version() (BuildahVersionInfo, error) {
+	buildahArgs := []string{"version", "--json"}
+
+	buildahLog.Debugf("Running command:\nbuildah %s", strings.Join(buildahArgs, " "))
+
+	stdout, stderr, _, err := b.Executor.Execute("buildah", buildahArgs...)
+	if err != nil {
+		buildahLog.Errorf("buildah version failed: %s", err.Error())
+		if stderr != "" {
+			buildahLog.Errorf("stderr:\n%s", stderr)
+		}
+		return BuildahVersionInfo{}, err
+	}
+
+	var versionInfo BuildahVersionInfo
+	err = json.Unmarshal([]byte(stdout), &versionInfo)
+	if err != nil {
+		return BuildahVersionInfo{}, fmt.Errorf("parsing version output: %w", err)
+	}
+
+	return versionInfo, nil
 }

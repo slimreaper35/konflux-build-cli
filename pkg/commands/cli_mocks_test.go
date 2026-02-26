@@ -33,6 +33,7 @@ type mockBuildahCli struct {
 	PullFunc         func(args *cliwrappers.BuildahPullArgs) error
 	InspectFunc      func(args *cliwrappers.BuildahInspectArgs) (string, error)
 	InspectImageFunc func(name string) (cliwrappers.BuildahImageInfo, error)
+	VersionFunc      func() (cliwrappers.BuildahVersionInfo, error)
 }
 
 func (m *mockBuildahCli) Build(args *cliwrappers.BuildahBuildArgs) error {
@@ -68,6 +69,13 @@ func (m *mockBuildahCli) InspectImage(name string) (cliwrappers.BuildahImageInfo
 		return m.InspectImageFunc(name)
 	}
 	return cliwrappers.BuildahImageInfo{}, nil
+}
+
+func (m *mockBuildahCli) Version() (cliwrappers.BuildahVersionInfo, error) {
+	if m.VersionFunc != nil {
+		return m.VersionFunc()
+	}
+	return cliwrappers.BuildahVersionInfo{}, nil
 }
 
 var _ cliwrappers.OrasCliInterface = &mockOrasCli{}
