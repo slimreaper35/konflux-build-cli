@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -105,6 +106,13 @@ var BuildParamsConfig = map[string]common.Parameter{
 		TypeKind:   reflect.Slice,
 		Usage:      "Annotations to apply to the image using buildah's --annotation option.",
 	},
+	"annotations-file": {
+		Name:       "annotations-file",
+		ShortName:  "",
+		EnvVarName: "KBC_BUILD_ANNOTATIONS_FILE",
+		TypeKind:   reflect.String,
+		Usage:      "Path to a file with annotations, same file format as --build-args-file.",
+	},
 	"image-source": {
 		Name:       "image-source",
 		ShortName:  "",
@@ -177,6 +185,7 @@ type BuildParams struct {
 	Envs                    []string `paramName:"envs"`
 	Labels                  []string `paramName:"labels"`
 	Annotations             []string `paramName:"annotations"`
+	AnnotationsFile         string   `paramName:"annotations-file"`
 	ImageSource             string   `paramName:"image-source"`
 	ImageRevision           string   `paramName:"image-revision"`
 	LegacyBuildTimestamp    string   `paramName:"legacy-build-timestamp"`
@@ -316,6 +325,9 @@ func (c *Build) logParams() {
 	}
 	if len(c.Params.Annotations) > 0 {
 		l.Logger.Infof("[param] Annotations: %v", c.Params.Annotations)
+	}
+	if c.Params.AnnotationsFile != "" {
+		l.Logger.Infof("[param] AnnotationsFile: %s", c.Params.AnnotationsFile)
 	}
 	if c.Params.ImageSource != "" {
 		l.Logger.Infof("[param] ImageSource: %s", c.Params.ImageSource)
@@ -609,7 +621,7 @@ func processKeyValueEnvs(args []string) map[string]string {
 	return values
 }
 
-// Prepends default labels and annotations to the user-provided arrays.
+// Prepends default labels and annotations to the user-provided values.
 // User-provided values override defaults via buildah's "last value wins" behavior.
 //
 // The default annotations are primarily based on the OCI annotation spec:
@@ -674,7 +686,19 @@ func (c *Build) mergeDefaultLabelsAndAnnotations() ([]string, []string, error) {
 	}
 
 	mergedLabels := append(defaultLabels, c.Params.Labels...)
-	mergedAnnotations := append(defaultAnnotations, c.Params.Annotations...)
+
+	mergedAnnotations := defaultAnnotations
+	if c.Params.AnnotationsFile != "" {
+		fileAnnotations, err := parseAnnotationsFile(c.Params.AnnotationsFile)
+		if err != nil {
+			return nil, nil, fmt.Errorf("parsing annotations file: %w", err)
+		}
+		// --annotations-file takes precedence over defaults
+		mergedAnnotations = append(mergedAnnotations, fileAnnotations...)
+	}
+	// --annotations take precedence over --annotations-file
+	mergedAnnotations = append(mergedAnnotations, c.Params.Annotations...)
+
 	return mergedLabels, mergedAnnotations, nil
 }
 
@@ -698,6 +722,19 @@ func (c *Build) getBuildTimeRFC3339() (string, error) {
 	return buildTime.Format(time.RFC3339), nil
 }
 
+func parseAnnotationsFile(filePath string) ([]string, error) {
+	annotations, err := buildargs.ParseBuildArgFile(filePath)
+	if err != nil {
+		return nil, err
+	}
+	annotationStrings := []string{}
+	for k, v := range annotations {
+		annotationStrings = append(annotationStrings, k+"="+v)
+	}
+	slices.Sort(annotationStrings)
+	return annotationStrings, nil
+}
+
 // Convert Go's GOARCH value to the value used for the 'architecture' label.
 //
 // Historically, the 'architecture' label used the RPM architecture names rather
@@ -716,6 +753,11 @@ func goArchToArchitectureLabel(goarch string) string {
 func (c *Build) buildImage() error {
 	l.Logger.Info("Building container image...")
 
+	mergedLabels, mergedAnnotations, err := c.mergeDefaultLabelsAndAnnotations()
+	if err != nil {
+		return err
+	}
+
 	originalCwd, err := os.Getwd()
 	if err != nil {
 		return err
@@ -724,11 +766,6 @@ func (c *Build) buildImage() error {
 		return fmt.Errorf("couldn't cd to context directory: %w", err)
 	}
 	defer os.Chdir(originalCwd)
-
-	mergedLabels, mergedAnnotations, err := c.mergeDefaultLabelsAndAnnotations()
-	if err != nil {
-		return err
-	}
 
 	buildArgs := &cliWrappers.BuildahBuildArgs{
 		Containerfile:    c.containerfilePath,

@@ -37,6 +37,7 @@ type BuildParams struct {
 	Envs                    []string
 	Labels                  []string
 	Annotations             []string
+	AnnotationsFile         string
 	ImageSource             string
 	ImageRevision           string
 	LegacyBuildTimestamp    string
@@ -180,6 +181,9 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	if len(buildParams.Annotations) > 0 {
 		args = append(args, "--annotations")
 		args = append(args, buildParams.Annotations...)
+	}
+	if buildParams.AnnotationsFile != "" {
+		args = append(args, "--annotations-file", buildParams.AnnotationsFile)
 	}
 	if buildParams.ImageSource != "" {
 		args = append(args, "--image-source", buildParams.ImageSource)
@@ -902,6 +906,53 @@ LABEL test.label="envs-test"
 			"org.opencontainers.image.source=https://github.com/konflux-ci/test",
 			"org.opencontainers.image.revision=abc123",
 			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
+		))
+	})
+
+	t.Run("AnnotationsFile", func(t *testing.T) {
+		contextDir := setupTestContext(t)
+
+		writeContainerfile(contextDir, `FROM scratch`)
+
+		annotationsFileContent := `
+# overrides default annotation
+org.opencontainers.image.created=never
+
+annotation.from.file=overriden-below
+annotation.from.file=annotation-from-file
+
+common.annotation=overriden-by-cli-annotation
+`
+		testutil.WriteFileTree(t, contextDir, map[string]string{
+			"annotations.cfg": annotationsFileContent,
+		})
+
+		outputRef := "localhost/test-annotations-file:" + GenerateUniqueTag(t)
+
+		buildParams := BuildParams{
+			Context:   contextDir,
+			OutputRef: outputRef,
+			Push:      false,
+			Annotations: []string{
+				"annotation.from.cli=annotation-from-CLI",
+				"common.annotation=common-annotation-from-CLI",
+			},
+			AnnotationsFile: "/workspace/annotations.cfg",
+		}
+
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
+
+		imageMeta := getImageMeta(container, outputRef)
+
+		imageAnnotations := formatAsKeyValuePairs(imageMeta.annotations)
+		Expect(imageAnnotations).To(ContainElements(
+			"org.opencontainers.image.created=never",
+			"annotation.from.file=annotation-from-file",
+			"annotation.from.cli=annotation-from-CLI",
+			"common.annotation=common-annotation-from-CLI",
 		))
 	})
 

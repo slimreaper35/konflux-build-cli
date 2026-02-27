@@ -1267,4 +1267,66 @@ func Test_Build_mergeDefaultLabelsAndAnnotations(t *testing.T) {
 		g.Expect(err).To(HaveOccurred())
 		g.Expect(err.Error()).To(ContainSubstring("determining build timestamp: parsing source-date-epoch:"))
 	})
+
+	t.Run("should parse annotations from file", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"annotations.cfg": `
+# comment, ignored
+   # also a comment
+annotation.from.file=annotation-from-file
+
+with.hash.char=this comment # is not a comment
+
+			leading.spaces=are-removed
+			`,
+		})
+
+		c := &Build{
+			Params: &BuildParams{
+				SourceDateEpoch: "1767225600",
+				AnnotationsFile:      filepath.Join(tempDir, "annotations.cfg"),
+			},
+		}
+
+		_, annotations, err := c.mergeDefaultLabelsAndAnnotations()
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(annotations).To(Equal([]string{
+			// always added
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
+			// from file, sorted alphabetically
+			"annotation.from.file=annotation-from-file",
+			"leading.spaces=are-removed",
+			"with.hash.char=this comment # is not a comment",
+		}))
+	})
+
+	t.Run("should return error for nonexistent annotations file", func(t *testing.T) {
+		c := &Build{
+			Params: &BuildParams{
+				AnnotationsFile: "/nonexistent/annotations.cfg",
+			},
+		}
+
+		_, _, err := c.mergeDefaultLabelsAndAnnotations()
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(MatchRegexp("parsing annotations file: .* /nonexistent/annotations.cfg"))
+	})
+
+	t.Run("should return error for invalid annotations file", func(t *testing.T) {
+		tempDir := t.TempDir()
+		testutil.WriteFileTree(t, tempDir, map[string]string{
+			"annotations.cfg": "this line has no equals sign\n",
+		})
+
+		c := &Build{
+			Params: &BuildParams{
+				AnnotationsFile: filepath.Join(tempDir, "annotations.cfg"),
+			},
+		}
+
+		_, _, err := c.mergeDefaultLabelsAndAnnotations()
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(MatchRegexp("parsing annotations file: .*annotations.cfg:1: expected arg=value"))
+	})
 }
