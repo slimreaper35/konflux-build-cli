@@ -48,7 +48,13 @@ type BuildParams struct {
 	AddLegacyLabels         bool
 	ContainerfileJsonOutput string
 	SkipInjections          bool
-	ExtraArgs               []string
+	// Defaults to true in the CLI, need a way to distinguish between explicitly false and unset
+	InheritLabels *bool
+	ExtraArgs     []string
+}
+
+func boolptr(v bool) *bool {
+	return &v
 }
 
 // Public interface for parity with ApplyTags. Not used in these tests directly.
@@ -223,6 +229,9 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	}
 	if buildParams.SkipInjections {
 		args = append(args, "--skip-injections")
+	}
+	if buildParams.InheritLabels != nil {
+		args = append(args, fmt.Sprintf("--inherit-labels=%t", *buildParams.InheritLabels))
 	}
 	// Add separator and extra args if provided
 	if len(buildParams.ExtraArgs) > 0 {
@@ -1736,5 +1745,53 @@ LABEL literal.argname.2='$DOUBLE_QUOTED_ARG'
 				))
 			})
 		})
+	})
+
+	t.Run("DisinheritLabels", func(t *testing.T) {
+		contextDir := setupTestContext(t)
+
+		writeContainerfile(contextDir, fmt.Sprintf(`
+# Real base image used for an earlier stage
+FROM %s AS stage1
+
+LABEL stage1.label=label-from-stage1
+
+FROM stage1
+
+LABEL final.stage.label=value-gets-overriden
+LABEL final.stage.label=label-from-final-stage
+`, baseImage))
+
+		outputRef := "localhost/test-disinherit-labels:" + GenerateUniqueTag(t)
+
+		buildParams := BuildParams{
+			Context:         contextDir,
+			OutputRef:       outputRef,
+			Push:            false,
+			SourceDateEpoch: "1767225600", // 2026-01-01
+			InheritLabels:   boolptr(false),
+			Labels:          []string{"cli.label=label-from-CLI"},
+		}
+
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
+
+		imageMeta := getImageMeta(container, outputRef)
+		Expect(formatAsKeyValuePairs(imageMeta.labels)).To(ConsistOf(
+			"final.stage.label=label-from-final-stage",
+			"cli.label=label-from-CLI",
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
+			// And nothing else (hence ConsistOf())
+		))
+
+		injectedLabels := getLabelsFromLabelsJson(container, outputRef)
+		Expect(formatAsKeyValuePairs(injectedLabels)).To(ConsistOf(
+			"final.stage.label=label-from-final-stage",
+			"cli.label=label-from-CLI",
+			"org.opencontainers.image.created=2026-01-01T00:00:00Z",
+			// And nothing else (hence ConsistOf())
+		))
 	})
 }

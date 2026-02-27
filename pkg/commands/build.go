@@ -181,6 +181,14 @@ var BuildParamsConfig = map[string]common.Parameter{
 		DefaultValue: "false",
 		Usage:        "Do not inject anything into /usr/share/buildinfo/.",
 	},
+	"inherit-labels": {
+		Name:         "inherit-labels",
+		ShortName:    "",
+		EnvVarName:   "KBC_BUILD_INHERIT_LABELS",
+		TypeKind:     reflect.Bool,
+		DefaultValue: "true",
+		Usage:        "Inherit labels from the base image or base stages.",
+	},
 }
 
 type BuildParams struct {
@@ -205,6 +213,7 @@ type BuildParams struct {
 	AddLegacyLabels         bool     `paramName:"add-legacy-labels"`
 	ContainerfileJsonOutput string   `paramName:"containerfile-json-output"`
 	SkipInjections          bool     `paramName:"skip-injections"`
+	InheritLabels           bool     `paramName:"inherit-labels"`
 	ExtraArgs               []string // Additional arguments to pass to buildah build
 }
 
@@ -436,6 +445,10 @@ func (c *Build) logParams() {
 	}
 	if c.Params.SkipInjections {
 		l.Logger.Infof("[param] SkipInjections: %t", c.Params.SkipInjections)
+	}
+	// Defaults to true, so log only if false
+	if !c.Params.InheritLabels {
+		l.Logger.Infof("[param] InheritLabels: %t", c.Params.InheritLabels)
 	}
 	if len(c.Params.ExtraArgs) > 0 {
 		l.Logger.Infof("[param] ExtraArgs: %v", c.Params.ExtraArgs)
@@ -925,7 +938,15 @@ func appendToFile(filePath, content string) error {
 func (c *Build) determineFinalLabels(df *dockerfile.Dockerfile, userLabels []string) (map[string]string, error) {
 	labels := make(map[string]string)
 
-	baseImage, containerfileLabels := processUntilBaseStage(df)
+	var baseImage string
+	var containerfileLabels map[string]string
+	if c.Params.InheritLabels {
+		baseImage, containerfileLabels = processUntilBaseStage(df)
+	} else if df != nil && len(df.Stages) > 0 {
+		// Label inheritance disabled, don't get base image labels
+		// or labels from any stage except the target stage
+		containerfileLabels = getStageLabels(df.Stages[len(df.Stages)-1])
+	}
 
 	// Base image labels
 	if inspectableRef, ok := getInspectableRef(baseImage); ok {
@@ -999,16 +1020,26 @@ func processUntilBaseStage(df *dockerfile.Dockerfile) (string, map[string]string
 
 	labels := make(map[string]string)
 	for _, stage := range stageChain {
-		for _, cmd := range stage.Commands {
-			if labelCmd, ok := cmd.Command.(*instructions.LabelCommand); ok {
-				for _, kv := range labelCmd.Labels {
-					labels[kv.Key] = kv.Value
-				}
-			}
-		}
+		maps.Copy(labels, getStageLabels(stage))
 	}
 
 	return baseImage, labels
+}
+
+func getStageLabels(stage *dockerfile.Stage) map[string]string {
+	if stage == nil {
+		return nil
+	}
+
+	labels := make(map[string]string)
+	for _, cmd := range stage.Commands {
+		if labelCmd, ok := cmd.Command.(*instructions.LabelCommand); ok {
+			for _, kv := range labelCmd.Labels {
+				labels[kv.Key] = kv.Value
+			}
+		}
+	}
+	return labels
 }
 
 // Determine if the base image is worth inspecting to find its labels.
@@ -1087,6 +1118,7 @@ func (c *Build) buildImage() error {
 		SourceDateEpoch:  c.Params.SourceDateEpoch,
 		RewriteTimestamp: c.Params.RewriteTimestamp,
 		ExtraArgs:        c.Params.ExtraArgs,
+		InheritLabels:    &c.Params.InheritLabels,
 	}
 	if c.Params.WorkdirMount != "" {
 		buildArgs.Volumes = []cliWrappers.BuildahVolume{
