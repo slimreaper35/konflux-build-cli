@@ -162,7 +162,7 @@ func TestPushContainerfile(t *testing.T) {
 				alternativeFilename: "Dockerfile",
 			},
 			expectedTaggedDigest:         "sha256-2788b272a5a7c0071906a9c6b654760e44a1fc8226f8268c70848148f19c35b0",
-			expectedContainerfileDigest:  sourceContainerfileContentDigest,
+			expectedContainerfileDigest:  sourceContainerfilesOperatorContentDigest,
 			expectedTitleAnnotationValue: "Dockerfile",
 		},
 	}
