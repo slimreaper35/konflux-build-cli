@@ -175,6 +175,64 @@ func TestRun(t *testing.T) {
 
 	})
 
+	t.Run("Successful push with an alternative container file name", func(t *testing.T) {
+		artifactImageDigest := "sha256:a7c0071906a9c6b654760e44a1fc8226f8268c70848148f19c35b02788b272a5"
+
+		orasCli := &mockOrasCli{}
+		orasCli.PushFunc = func(args *cliwrappers.OrasPushArgs) (string, string, error) {
+			g.Expect(args.FileName).Should(Equal("Dockerfile"))
+
+			absFilename, err := filepath.Abs("Dockerfile")
+			g.Expect(err).ShouldNot(HaveOccurred(), "Alternative file Dockerfile does not exist")
+			g.Expect(filepath.Dir(absFilename)).ShouldNot(Equal(filepath.Join(workDir, "source")),
+				"Directory was not changed for pushing with an alternative file name")
+
+			originalContainerfile := filepath.Join(workDir, "source", "Containerfile")
+			originalContent, err := os.ReadFile(originalContainerfile)
+			g.Expect(err).ShouldNot(HaveOccurred())
+
+			content, err := os.ReadFile(absFilename)
+			g.Expect(err).ShouldNot(HaveOccurred())
+
+			g.Expect(string(content)).Should(Equal(string(originalContent)), "Container file content is mismatching")
+
+			return "localhost.reg.io/app@" + artifactImageDigest, "", nil
+		}
+
+		testCases := []struct {
+			alternativeFilename string
+			shouldSucceed       bool
+		}{
+			{alternativeFilename: "Dockerfile", shouldSucceed: true},
+			{alternativeFilename: "path/to/Dockerfile", shouldSucceed: false},
+		}
+
+		for _, tc := range testCases {
+			t.Run("use alternative file name "+tc.alternativeFilename, func(t *testing.T) {
+				cmd := &PushContainerfile{
+					Params: &PushContainerfileParams{
+						ImageUrl:            "localhost.reg.io/app",
+						ImageDigest:         imageDigest,
+						Source:              "source",
+						Containerfile:       "Containerfile",
+						Context:             ".",
+						TagSuffix:           ".dockerfile",
+						AlternativeFilename: tc.alternativeFilename,
+					},
+					ResultsWriter: &common.ResultsWriter{},
+					CliWrappers:   PushContainerfileCliWrappers{OrasCli: orasCli},
+				}
+
+				err := cmd.Run()
+				if tc.shouldSucceed {
+					g.Expect(err).ShouldNot(HaveOccurred())
+				} else {
+					g.Expect(err).Should(HaveOccurred())
+				}
+			})
+		}
+	})
+
 	t.Run("should not push and exits as normal if specified Containerfile is not found", func(t *testing.T) {
 		logFilename := filepath.Join(t.TempDir(), "logfile")
 		logFile, _ := os.OpenFile(logFilename, os.O_CREATE|os.O_WRONLY, 0644)

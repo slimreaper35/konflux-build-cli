@@ -93,17 +93,26 @@ var PushContainerfileParamsConfig = map[string]common.Parameter{
 		Usage:      "Write digested image reference of the pushed Containerfile image into this file.",
 		Required:   false,
 	},
+	"alternative-filename": {
+		Name:       "alternative-filename",
+		ShortName:  "n",
+		EnvVarName: "KBC_PUSH_CONTAINERFILE_ALTERNATIVE_FILENAME",
+		TypeKind:   reflect.String,
+		Usage:      "Alternative file name in the artifact image, e.g. Dockerfile.",
+		Required:   false,
+	},
 }
 
 type PushContainerfileParams struct {
-	ImageUrl           string `paramName:"image-url"`
-	ImageDigest        string `paramName:"image-digest"`
-	Containerfile      string `paramName:"containerfile"`
-	Context            string `paramName:"context"`
-	TagSuffix          string `paramName:"tag-suffix"`
-	ArtifactType       string `paramName:"artifact-type"`
-	Source             string `paramName:"source"`
-	ResultPathImageRef string `paramName:"result-path-image-ref"`
+	ImageUrl            string `paramName:"image-url"`
+	ImageDigest         string `paramName:"image-digest"`
+	Containerfile       string `paramName:"containerfile"`
+	Context             string `paramName:"context"`
+	TagSuffix           string `paramName:"tag-suffix"`
+	ArtifactType        string `paramName:"artifact-type"`
+	Source              string `paramName:"source"`
+	ResultPathImageRef  string `paramName:"result-path-image-ref"`
+	AlternativeFilename string `paramName:"alternative-filename"`
 }
 
 type PushContainerfileResults struct {
@@ -207,7 +216,31 @@ func (c *PushContainerfile) Run() error {
 		return fmt.Errorf("Error on getting absolute path of %s: %w", containerfilePath, err)
 	}
 
-	os.Chdir(filepath.Dir(absContainerfilePath))
+	var pushFilename string
+	var workDir string
+
+	if c.Params.AlternativeFilename != "" {
+		pushFilename = filepath.Base(c.Params.AlternativeFilename)
+		workDir, err = os.MkdirTemp("", "push-containerfile-")
+		if err != nil {
+			return fmt.Errorf("Error on creating temporary directory: %w", err)
+		}
+		defer os.RemoveAll(workDir)
+		content, err := os.ReadFile(absContainerfilePath)
+		if err != nil {
+			return fmt.Errorf("Error on reading file %s: %w", absContainerfilePath, err)
+		}
+		if err := os.WriteFile(filepath.Join(workDir, pushFilename), content, 0644); err != nil {
+			return fmt.Errorf("Error on writing file: %w", err)
+		}
+	} else {
+		pushFilename = filepath.Base(absContainerfilePath)
+		workDir = filepath.Dir(absContainerfilePath)
+	}
+
+	if err := os.Chdir(workDir); err != nil {
+		return fmt.Errorf("Error on changing directory to %s: %w", workDir, err)
+	}
 	defer os.Chdir(curDir)
 
 	stdout, _, err := c.CliWrappers.OrasCli.Push(&cliwrappers.OrasPushArgs{
@@ -216,7 +249,7 @@ func (c *PushContainerfile) Run() error {
 		Format:           "go-template",
 		Template:         "{{.reference}}",
 		DestinationImage: fmt.Sprintf("%s:%s", c.imageName, tag),
-		FileName:         filepath.Base(absContainerfilePath),
+		FileName:         pushFilename,
 	})
 	if err != nil {
 		return fmt.Errorf("Error on pushing Containerfile %s: %w", containerfilePath, err)
@@ -262,6 +295,14 @@ func (c *PushContainerfile) validateParams() error {
 		return fmt.Errorf("Tag suffix includes invalid characters or exceeds the max length of 57 characters.")
 	}
 
+	altFilename := c.Params.AlternativeFilename
+	if strings.Contains(altFilename, "/") {
+		return fmt.Errorf("Path is included in alternative file name '%s'", altFilename)
+	}
+	if len(altFilename) > 100 {
+		return fmt.Errorf("Alternative file name exceeds 100 characters.")
+	}
+
 	return nil
 }
 
@@ -275,5 +316,8 @@ func (c *PushContainerfile) logParams() {
 	l.Logger.Infof("[param] Source directory: %s", c.Params.Source)
 	if c.Params.ResultPathImageRef != "" {
 		l.Logger.Infof("[param] Image Reference result file: %s", c.Params.ResultPathImageRef)
+	}
+	if c.Params.AlternativeFilename != "" {
+		l.Logger.Infof("[param] Alternative file name: %s", c.Params.AlternativeFilename)
 	}
 }

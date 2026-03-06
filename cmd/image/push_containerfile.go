@@ -41,6 +41,11 @@ and --containerfile.`,
   # Push source/Containerfile as artifact quay.io/org/app:sha256-1234567.containerfile by passing absolute source path
   konflux-build-cli image push-containerfile --image-url quay.io/org/app --image-digest sha256:1234567 \
     --source /path/to/source
+
+  # Use alternative file name in artifact image rather than the original file name
+  konflux-build-cli image push-containerfile --image-url quay.io/org/app --image-digest sha256:1234567 \
+    --source /path/to/source --context db --containerfile containerfiles/db \
+    --alternative-filename Dockerfile
 `,
 	Run: func(cmd *cobra.Command, args []string) {
 		l.Logger.Debug("Starting push-containerfile")

@@ -1285,7 +1285,7 @@ with.hash.char=this comment # is not a comment
 		c := &Build{
 			Params: &BuildParams{
 				SourceDateEpoch: "1767225600",
-				AnnotationsFile:      filepath.Join(tempDir, "annotations.cfg"),
+				AnnotationsFile: filepath.Join(tempDir, "annotations.cfg"),
 			},
 		}
 
