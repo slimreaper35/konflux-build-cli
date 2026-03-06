@@ -49,6 +49,17 @@ export KBC_MYCOMMAND_RESULT_FILE_SHA=/tmp/my-command-result-sha
 ./konflux-build-cli my-command --image-url quay.io/namespace/image:tag --digest sha256:abcde1234 --tags tag1 tag2
 ```
 
+## Running tests on macOS
+
+On macOS, the `/tmp` directory is a symbolic link to the `/private/tmp` directory. Some unit tests
+and integration tests rely on verbatim path comparisons. To avoid unexpected failures, you can set
+the `TMPDIR` environment variable. For example:
+
+```bash
+mkdir .tmpdir
+TMPDIR="$(PWD)/.tmpdir" go test ./...
+```
+
 ## How to run unit tests
 
 To run all unit tests:

@@ -130,13 +130,6 @@ func CreateTempDir(prefix string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// On macOS, /tmp is a symlink to /private/tmp. The podman machine mount
-	// /private from macOS but not /tmp, so volume mounts using /tmp paths
-	// would look in the VM's own tmp instead of the macOS host.
-	tmpDir, err = filepath.EvalSymlinks(tmpDir)
-	if err != nil {
-		return "", err
-	}
 	err = os.Chmod(tmpDir, 0777)
 	if err != nil {
 		return "", err
