@@ -23,8 +23,6 @@ import (
 const (
 	// Name of the CLI binary
 	KonfluxBuildCli = "konflux-build-cli"
-	// Directory where to put / expect the CLI binary to test
-	KonfluxBuildCliCompileDir = "/tmp"
 )
 
 var (
@@ -33,12 +31,8 @@ var (
 )
 
 func init() {
-	compileDir, err := filepath.EvalSymlinks(KonfluxBuildCliCompileDir)
-	if err != nil {
-		fmt.Printf("failed to resolve symlinks for %s: %s\n", KonfluxBuildCliCompileDir, err.Error())
-		os.Exit(2)
-	}
-	cliBinPath = path.Join(compileDir, KonfluxBuildCli)
+	compileDir := os.TempDir()
+	cliBinPath = filepath.Join(compileDir, KonfluxBuildCli)
 
 	// Init logger
 	logLevel := "info"

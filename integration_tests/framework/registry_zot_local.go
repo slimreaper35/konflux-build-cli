@@ -27,9 +27,7 @@ const (
 	zotRegistryDefaultPort   = "5000"
 	zotRegistryUser          = "zotuser"
 	zotRegistryPassword      = "zotpassword"
-
 	zotRegistryStorageVolume  = true
-	zotRegistryStorageHostDir = "/tmp/zot-registry-data"
 
 	zotConfigDataDir    = "zotdata"
 	zotConfigFileName   = "zot-config.json"
@@ -67,19 +65,7 @@ func NewZotRegistry() ImageRegistry {
 		log.Fatal(err)
 	}
 
-	zotRegistryStorageHostDirAbsolutePath, err := filepath.Abs(zotRegistryStorageHostDir)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	if err := EnsureDirectory(zotRegistryStorageHostDirAbsolutePath); err != nil {
-		log.Fatal(err)
-	}
-
-	zotRegistryStorageHostDirAbsolutePath, err = filepath.EvalSymlinks(zotRegistryStorageHostDirAbsolutePath)
-	if err != nil {
-		log.Fatal(err)
-	}
+	zotRegistryStorageHostDir := os.TempDir()
 
 	zotRegistryPort := os.Getenv("ZOT_REGISTRY_PORT")
 	if zotRegistryPort == "" {
@@ -104,7 +90,7 @@ func NewZotRegistry() ImageRegistry {
 		zotKeyPath:            path.Join(zotConfigDataDirAbsolutePath, zotKeyFileName),
 		zotCertPath:           path.Join(zotConfigDataDirAbsolutePath, zotCertFileName),
 		dockerConfigJsonPath:  path.Join(zotConfigDataDirAbsolutePath, "config.json"),
-		zotRegistryStorageDir: path.Join(zotRegistryStorageHostDirAbsolutePath, strconv.FormatInt(time.Now().UnixMilli(), 10)),
+		zotRegistryStorageDir: path.Join(zotRegistryStorageHostDir, strconv.FormatInt(time.Now().UnixMilli(), 10)),
 	}
 }
 
@@ -129,7 +115,7 @@ func (z *ZotRegistry) Start() error {
 	// Try to clean up the registry data.
 	// It might fail due to permissions issue if the folder content was created from within a container,
 	// but it doesn't matter because each new run uses different sub folder for storage.
-	_ = os.RemoveAll(zotRegistryStorageHostDir)
+	_ = os.RemoveAll(z.zotRegistryStorageDir)
 	if zotRegistryStorageVolume {
 		z.container.AddVolumeWithOptions(z.zotRegistryStorageDir, zotDataPathInContainer, "z")
 		if err := EnsureDirectory(z.zotRegistryStorageDir); err != nil {
