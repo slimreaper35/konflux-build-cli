@@ -60,7 +60,7 @@ func boolptr(v bool) *bool {
 
 // Public interface for parity with ApplyTags. Not used in these tests directly.
 func RunBuild(buildParams BuildParams, imageRegistry ImageRegistry) error {
-	opts := []ContainerOption{}
+	opts := []ContainerOption{WithUser("root")}
 	// On macOS, containers run in a Linux VM; overlay storage driver
 	// doesn't work reliably with host volume mounts through the VM
 	if runtime.GOOS != "darwin" {
