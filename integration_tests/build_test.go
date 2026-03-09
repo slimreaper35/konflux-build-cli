@@ -60,19 +60,16 @@ func boolptr(v bool) *bool {
 
 // Public interface for parity with ApplyTags. Not used in these tests directly.
 func RunBuild(buildParams BuildParams, imageRegistry ImageRegistry) error {
-	opts := []ContainerOption{WithUser("root")}
-	// On macOS, containers run in a Linux VM; overlay storage driver
-	// doesn't work reliably with host volume mounts through the VM
-	if runtime.GOOS != "darwin" {
-		containerStoragePath, err := createContainerStorageDir()
-		defer removeContainerStorageDir(containerStoragePath)
-		if err != nil {
-			return err
-		}
-		opts = append(opts, WithVolumeWithOptions(containerStoragePath, "/var/lib/containers", "z"))
+	storagePath, err := createContainerStorageDir()
+	defer removeContainerStorageDir(storagePath)
+	if err != nil {
+		return err
 	}
 
-	container, err := setupBuildContainer(buildParams, imageRegistry, opts...)
+	container, err := setupBuildContainer(buildParams, imageRegistry,
+		WithUser("root"),
+		maybeMountContainerStorage(storagePath, "root"),
+	)
 	defer container.DeleteIfExists()
 	if err != nil {
 		return err
@@ -85,12 +82,20 @@ func RunBuild(buildParams BuildParams, imageRegistry ImageRegistry) error {
 // under .test-containers-storage. Returns the full path to the created directory.
 // This directory can be mounted at /var/lib/containers in the test runner container.
 //
+// When running on MacOS, doesn't create the directory and returns ("", nil).
+// On macOS, containers run in a Linux VM. Overlay storage driver doesn't work reliably with
+// host volume mounts through the VM, so don't use a shared directory on macOS.
+//
 // Why put the directory in the repository root:
 //   - The directory can't be in /tmp, because that is usually a tmpfs which doesn't
 //     support all the operations that buildah needs to do with /var/lib/containers.
 //   - The repository root is an obvious choice for a directory that likely isn't in /tmp,
 //     is writable for the current user and doesn't pollute the user's home directory.
 func createContainerStorageDir() (string, error) {
+	if runtime.GOOS == "darwin" {
+		return "", nil
+	}
+
 	repoRoot, err := filepath.Abs(FindRepoRoot())
 	if err != nil {
 		return "", err
@@ -113,6 +118,19 @@ func createContainerStorageDir() (string, error) {
 	}
 
 	return tmpDir, nil
+}
+
+// Return a ContainerOption that mounts storagePath at the correct path for the specified user.
+// If storagePath is empty, returns a no-op ContainerOption.
+func maybeMountContainerStorage(storagePath string, forUser string) ContainerOption {
+	if storagePath == "" {
+		return func(*TestRunnerContainer) {}
+	}
+
+	if forUser == "root" {
+		return WithVolumeWithOptions(storagePath, "/var/lib/containers", "z")
+	}
+	return WithVolumeWithOptions(storagePath, "/home/taskuser/.local/share/containers", "z")
 }
 
 // Try to remove a directory created by createContainerStorageDir,
@@ -481,20 +499,16 @@ func expectEqualMaps(m1 map[string]string, m2 map[string]string, description ...
 func TestBuild(t *testing.T) {
 	SetupGomega(t)
 
-	commonOpts := []ContainerOption{WithUser("taskuser")}
-	// On macOS, containers run in a Linux VM; overlay storage driver
-	// doesn't work reliably with host volume mounts through the VM
-	if runtime.GOOS != "darwin" {
-		containerStoragePath, err := createContainerStorageDir()
-		t.Cleanup(func() { removeContainerStorageDir(containerStoragePath) })
-		Expect(err).ToNot(HaveOccurred())
-		commonOpts = append(commonOpts, WithVolumeWithOptions(containerStoragePath, "/home/taskuser/.local/share/containers", "z"))
-	}
+	storagePath, err := createContainerStorageDir()
+	t.Cleanup(func() { removeContainerStorageDir(storagePath) })
+	Expect(err).ToNot(HaveOccurred())
+
+	defaultOpts := []ContainerOption{WithUser("taskuser"), maybeMountContainerStorage(storagePath, "taskuser")}
 
 	setupBuildContainerWithCleanup := func(
 		t *testing.T, buildParams BuildParams, imageRegistry ImageRegistry, opts ...ContainerOption,
 	) *TestRunnerContainer {
-		opts = append(commonOpts, opts...)
+		opts = append(defaultOpts, opts...)
 		container, err := setupBuildContainer(buildParams, imageRegistry, opts...)
 		t.Cleanup(func() { container.DeleteIfExists() })
 		Expect(err).ToNot(HaveOccurred())
@@ -597,21 +611,50 @@ FROM %s
 RUN echo hi
 `, baseImage))
 
-		outputRef := "localhost/test-image:" + GenerateUniqueTag(t)
+		t.Run("AsRoot", func(t *testing.T) {
+			outputRef := "localhost/test-use-run-instruction-root:" + GenerateUniqueTag(t)
 
-		buildParams := BuildParams{
-			Context:   contextDir,
-			OutputRef: outputRef,
-			Push:      false,
-		}
+			buildParams := BuildParams{
+				Context:   contextDir,
+				OutputRef: outputRef,
+				Push:      false,
+			}
 
-		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+			// Most other tests run as "taskuser". They may have already taken ownership of the
+			// shared storage dir, so root will not have permissions to write there. Use a new one.
+			storagePath, err := createContainerStorageDir()
+			t.Cleanup(func() { removeContainerStorageDir(storagePath) })
+			Expect(err).ToNot(HaveOccurred())
 
-		err := runBuild(container, buildParams)
-		Expect(err).ToNot(HaveOccurred())
+			container := setupBuildContainerWithCleanup(t, buildParams, nil,
+				WithUser("root"), maybeMountContainerStorage(storagePath, "root"))
 
-		err = container.ExecuteCommand("buildah", "images", outputRef)
-		Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
+			err = runBuild(container, buildParams)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = container.ExecuteCommand("buildah", "images", outputRef)
+			Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
+		})
+
+		t.Run("AsNonRoot", func(t *testing.T) {
+			outputRef := "localhost/test-use-run-instruction-nonroot:" + GenerateUniqueTag(t)
+
+			buildParams := BuildParams{
+				Context:   contextDir,
+				OutputRef: outputRef,
+				Push:      false,
+			}
+
+			container := setupBuildContainerWithCleanup(t, buildParams, nil,
+				// This is the default, but let's be explicit
+				WithUser("taskuser"))
+
+			err := runBuild(container, buildParams)
+			Expect(err).ToNot(HaveOccurred())
+
+			err = container.ExecuteCommand("buildah", "images", outputRef)
+			Expect(err).ToNot(HaveOccurred(), fmt.Sprintf("Image %s should exist in local buildah storage", outputRef))
+		})
 	})
 
 	t.Run("WithSecretDirs", func(t *testing.T) {
