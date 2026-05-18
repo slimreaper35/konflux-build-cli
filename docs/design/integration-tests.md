@@ -14,7 +14,7 @@ import (
 	. "github.com/konflux-ci/konflux-build-cli/integration_tests/framework"
 )
 
-const MyCommandImage = "quay.io/konflux-ci/task-runner:latest"
+const MyCommandImage = TaskRunnerImageRef
 
 type MyCommandParams struct {
 	ImageRepoUrl string

@@ -23,6 +23,8 @@ import (
 const (
 	// Name of the CLI binary
 	KonfluxBuildCli = "konflux-build-cli"
+	// Keep task-runner image reference in one place, so it's consistent across tests.
+	TaskRunnerImageRef = "quay.io/konflux-ci/task-runner:1.7.0@sha256:1c0582a85dae0949f3ec94aca95695c5d7698b371f1b76c5a78822a6249073dc"
 )
 
 var (
