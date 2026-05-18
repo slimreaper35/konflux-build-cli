@@ -69,6 +69,15 @@ type BuildahBuildArgs struct {
 	InheritLabels    *bool
 	Target           string
 	SkipUnusedStages *bool
+	TLSVerify        *bool
+	Squash           bool
+	OmitHistory      bool
+	NoCache          bool
+	SecurityOpts     []string
+	CapAdd           []string
+	CapDrop          []string
+	Devices          []string
+	Ulimits          []string
 	ExtraArgs        []string
 	Wrapper          *WrapperCmd
 }
@@ -234,6 +243,42 @@ func (b *BuildahCli) Build(args *BuildahBuildArgs) error {
 		buildahArgs = append(buildahArgs, fmt.Sprintf("--skip-unused-stages=%t", *args.SkipUnusedStages))
 	}
 
+	if args.TLSVerify != nil {
+		buildahArgs = append(buildahArgs, fmt.Sprintf("--tls-verify=%t", *args.TLSVerify))
+	}
+
+	if args.Squash {
+		buildahArgs = append(buildahArgs, "--squash")
+	}
+
+	if args.OmitHistory {
+		buildahArgs = append(buildahArgs, "--omit-history")
+	}
+
+	if args.NoCache {
+		buildahArgs = append(buildahArgs, "--no-cache")
+	}
+
+	for _, opt := range args.SecurityOpts {
+		buildahArgs = append(buildahArgs, "--security-opt="+opt)
+	}
+
+	for _, capability := range args.CapAdd {
+		buildahArgs = append(buildahArgs, "--cap-add="+capability)
+	}
+
+	for _, capability := range args.CapDrop {
+		buildahArgs = append(buildahArgs, "--cap-drop="+capability)
+	}
+
+	for _, dev := range args.Devices {
+		buildahArgs = append(buildahArgs, "--device="+dev)
+	}
+
+	for _, ulimit := range args.Ulimits {
+		buildahArgs = append(buildahArgs, "--ulimit="+ulimit)
+	}
+
 	// Append extra arguments before the context directory
 	buildahArgs = append(buildahArgs, args.ExtraArgs...)
 	// Context directory must be the last argument
@@ -264,6 +309,7 @@ func (b *BuildahCli) Build(args *BuildahBuildArgs) error {
 type BuildahPushArgs struct {
 	Image       string
 	Destination string
+	TLSVerify   *bool
 }
 
 // Push an image from local storage to the registry. Return the digest of the pushed manifest.
@@ -283,7 +329,11 @@ func (b *BuildahCli) Push(args *BuildahPushArgs) (string, error) {
 	}
 	defer func() { _ = os.Remove(digestFile) }()
 
-	buildahArgs := []string{"push", "--digestfile", digestFile, args.Image}
+	buildahArgs := []string{"push", "--digestfile", digestFile}
+	if args.TLSVerify != nil {
+		buildahArgs = append(buildahArgs, fmt.Sprintf("--tls-verify=%t", *args.TLSVerify))
+	}
+	buildahArgs = append(buildahArgs, args.Image)
 	if args.Destination != "" {
 		buildahArgs = append(buildahArgs, args.Destination)
 	}
@@ -317,6 +367,7 @@ type BuildahPullArgs struct {
 	Image     string
 	HttpProxy string // Sets HTTP_PROXY and HTTPS_PROXY for the pull command
 	NoProxy   string // Sets NO_PROXY for the pull command
+	TLSVerify *bool
 }
 
 // Pull an image from the registry to local storage.
@@ -325,7 +376,11 @@ func (b *BuildahCli) Pull(args *BuildahPullArgs) error {
 		return errors.New("image arg is empty")
 	}
 
-	buildahArgs := []string{"pull", args.Image}
+	buildahArgs := []string{"pull"}
+	if args.TLSVerify != nil {
+		buildahArgs = append(buildahArgs, fmt.Sprintf("--tls-verify=%t", *args.TLSVerify))
+	}
+	buildahArgs = append(buildahArgs, args.Image)
 
 	buildahLog.Debugf("Running command:\n%s", shellJoin("buildah", buildahArgs...))
 
