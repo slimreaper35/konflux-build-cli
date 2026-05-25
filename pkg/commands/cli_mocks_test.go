@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"runtime"
+
 	"github.com/konflux-ci/konflux-build-cli/pkg/cliwrappers"
 )
 
@@ -74,7 +76,9 @@ func (m *mockBuildahCli) InspectImage(name string) (cliwrappers.BuildahImageInfo
 	if m.InspectImageFunc != nil {
 		return m.InspectImageFunc(name)
 	}
-	return cliwrappers.BuildahImageInfo{}, nil
+	info := cliwrappers.BuildahImageInfo{}
+	info.OCIv1.Architecture = runtime.GOARCH
+	return info, nil
 }
 
 func (m *mockBuildahCli) Version() (cliwrappers.BuildahVersionInfo, error) {
