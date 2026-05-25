@@ -3602,4 +3602,71 @@ EOF
 		// Should have dropped everything but the first 3 caps (0...00111 binary)
 		Expect(stderr).To(ContainSubstring("CapEff: 0000000000000007"))
 	})
+
+	t.Run("WrongArchBase", func(t *testing.T) {
+		SetupGomega(t)
+
+		foreignArch := "linux/s390x"
+		if runtime.GOARCH == "s390x" {
+			foreignArch = "linux/amd64"
+		}
+
+		imageRegistry := setupImageRegistry(t)
+		baseImageRepo := imageRegistry.GetTestNamespace() + "wrong-arch-base"
+		tag := GenerateUniqueTag(t)
+		foreignArchImageRef := baseImageRepo + ":" + tag
+
+		err := CreateTestImage(TestImageConfig{
+			ImageRef: foreignArchImageRef,
+			Platform: foreignArch,
+		})
+		Expect(err).ToNot(HaveOccurred())
+		t.Cleanup(func() { DeleteLocalImage(foreignArchImageRef) })
+
+		foreignArchDigest, err := PushImage(foreignArchImageRef)
+		Expect(err).ToNot(HaveOccurred())
+
+		t.Run("SingleArchDigest", func(t *testing.T) {
+			SetupGomega(t)
+
+			contextDir := setupTestContext(t)
+			imageRefByDigest := baseImageRepo + "@" + foreignArchDigest
+			writeContainerfile(contextDir, fmt.Sprintf("FROM %s\n", imageRefByDigest))
+
+			outputRef := "localhost/wrong-arch-digest:" + GenerateUniqueTag(t)
+			buildParams := BuildParams{
+				Context:   contextDir,
+				OutputRef: outputRef,
+			}
+
+			container := setupBuildContainerWithCleanup(t, buildParams, imageRegistry)
+			_, stderr, err := runBuildWithOutput(container, buildParams)
+			Expect(err).To(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("has architecture"))
+			Expect(stderr).To(ContainSubstring("Use a multi-arch image reference instead of a single-architecture reference"))
+		})
+
+		t.Run("IndexWithoutHostArch", func(t *testing.T) {
+			SetupGomega(t)
+
+			indexTag := GenerateUniqueTag(t)
+			indexRef := baseImageRepo + "-index:" + indexTag
+			_, err := CreateAndPushImageIndex(indexRef, []string{foreignArchImageRef})
+			Expect(err).ToNot(HaveOccurred())
+
+			contextDir := setupTestContext(t)
+			writeContainerfile(contextDir, fmt.Sprintf("FROM %s\n", indexRef))
+
+			outputRef := "localhost/wrong-arch-index:" + GenerateUniqueTag(t)
+			buildParams := BuildParams{
+				Context:   contextDir,
+				OutputRef: outputRef,
+			}
+
+			container := setupBuildContainerWithCleanup(t, buildParams, imageRegistry)
+			_, stderr, err := runBuildWithOutput(container, buildParams)
+			Expect(err).To(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("no image found in image index for architecture"))
+		})
+	})
 }

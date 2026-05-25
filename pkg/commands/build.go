@@ -700,6 +700,10 @@ func (c *Build) Run() error {
 		return err
 	}
 
+	if err := c.verifyBaseImageArchitectures(pulledImages); err != nil {
+		return err
+	}
+
 	if err := c.buildImage(); err != nil {
 		return err
 	}
@@ -2131,6 +2135,31 @@ func (c *Build) prePullBaseImages(df *dockerfile.Dockerfile) ([]string, error) {
 	}
 
 	return pulledImages, nil
+}
+
+// Verify that each pre-pulled base image has an architecture matching the host
+// to prevent emulation builds, which are not allowed.
+//
+// If the image was a multi-arch index without the correct arch, buildah pull would
+// have already failed. This check catches single-arch references, where buildah
+// silently pulls the wrong architecture.
+func (c *Build) verifyBaseImageArchitectures(images []string) error {
+	hostArch := platforms.Normalize(platforms.DefaultSpec()).Architecture
+
+	for _, image := range images {
+		_, inspectableRef := splitTransport(image)
+		info, err := c.CliWrappers.BuildahCli.InspectImage(inspectableRef)
+		if err != nil {
+			return fmt.Errorf("inspecting base image %s: %w", image, err)
+		}
+		if info.OCIv1.Architecture != hostArch {
+			return fmt.Errorf(
+				"base image %s has architecture '%s', expected '%s'. Use a multi-arch image reference instead of a single-architecture reference",
+				image, info.OCIv1.Architecture, hostArch,
+			)
+		}
+	}
+	return nil
 }
 
 // Collect all images needed to build the target stage.

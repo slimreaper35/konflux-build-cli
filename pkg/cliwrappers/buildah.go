@@ -395,7 +395,8 @@ func (b *BuildahCli) Pull(args *BuildahPullArgs) error {
 		return b.Executor.Execute(cmd)
 	}).WithImageRegistryPreset().
 		StopIfOutputContains("unauthorized").
-		StopIfOutputContains("authentication required")
+		StopIfOutputContains("authentication required").
+		StopIfOutputContains("no image found in image index for architecture")
 
 	_, _, _, err := retryer.Run()
 	if err != nil {
