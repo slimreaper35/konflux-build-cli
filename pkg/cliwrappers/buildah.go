@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/konflux-ci/konflux-build-cli/pkg/common"
@@ -532,6 +533,33 @@ func (b *BuildahCli) ImagesJson(args *BuildahImagesArgs) ([]BuildahImagesEntry, 
 
 type BuildahVersionInfo struct {
 	Version string `json:"version"`
+}
+
+// Parse the "{major}.{minor}.{patch}" Version string into a 3-element int slice.
+func (v BuildahVersionInfo) ParseVersion() ([]int, error) {
+	if v.Version == "" {
+		return nil, errors.New("buildah version is empty")
+	}
+
+	versionParts := strings.Split(v.Version, ".")
+
+	version := make([]int, 0, 3)
+	for _, part := range versionParts {
+		n, err := strconv.Atoi(part)
+		if err != nil {
+			return nil, err
+		}
+		if n < 0 {
+			return nil, fmt.Errorf("negative number in version: %d", n)
+		}
+		version = append(version, n)
+	}
+
+	if len(version) != 3 {
+		return nil, fmt.Errorf("expected 3-part version number, got %q", v.Version)
+	}
+
+	return version, nil
 }
 
 func (b *BuildahCli) Version() (BuildahVersionInfo, error) {

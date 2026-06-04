@@ -85,7 +85,7 @@ func (m *mockBuildahCli) Version() (cliwrappers.BuildahVersionInfo, error) {
 	if m.VersionFunc != nil {
 		return m.VersionFunc()
 	}
-	return cliwrappers.BuildahVersionInfo{}, nil
+	return cliwrappers.BuildahVersionInfo{Version: "1.0.0"}, nil
 }
 
 func (m *mockBuildahCli) ManifestCreate(args *cliwrappers.BuildahManifestCreateArgs) error {

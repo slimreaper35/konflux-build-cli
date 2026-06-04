@@ -786,6 +786,69 @@ func TestBuildahCli_Version(t *testing.T) {
 	})
 }
 
+func TestBuildahVersionInfo_ParseVersion(t *testing.T) {
+	tests := []struct {
+		name         string
+		version      string
+		expected     []int
+		errSubstring string
+	}{
+		{
+			name:     "valid version",
+			version:  "1.44.0",
+			expected: []int{1, 44, 0},
+		},
+		{
+			name:     "valid 2.x version",
+			version:  "2.0.1",
+			expected: []int{2, 0, 1},
+		},
+		{
+			name:         "empty string",
+			version:      "",
+			errSubstring: "buildah version is empty",
+		},
+		{
+			name:         "too few parts",
+			version:      "1.2",
+			errSubstring: "expected 3-part version number",
+		},
+		{
+			name:         "too many parts",
+			version:      "1.2.3.4",
+			errSubstring: "expected 3-part version number",
+		},
+		{
+			name:         "non-numeric part",
+			version:      "1.2.x",
+			errSubstring: "invalid syntax",
+		},
+		{
+			name:         "negative number",
+			version:      "1.-2.3",
+			errSubstring: "negative number in version: -2",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewWithT(t)
+
+			v := cliwrappers.BuildahVersionInfo{Version: tc.version}
+			result, err := v.ParseVersion()
+
+			if tc.errSubstring != "" {
+				g.Expect(err).To(HaveOccurred())
+				g.Expect(err.Error()).To(ContainSubstring(tc.errSubstring))
+				g.Expect(result).To(BeNil())
+			} else {
+				g.Expect(err).ToNot(HaveOccurred())
+				g.Expect(result).To(Equal(tc.expected))
+			}
+		})
+	}
+}
+
 func TestBuildahBuildArgs_MakePathsAbsolute(t *testing.T) {
 	g := NewWithT(t)
 

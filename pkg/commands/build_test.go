@@ -424,6 +424,62 @@ func Test_Build_validateParams(t *testing.T) {
 	}
 }
 
+func Test_Build_detectBuildahVersion(t *testing.T) {
+	g := NewWithT(t)
+
+	t.Run("should set buildahVersion and parsedBuildahVersion", func(t *testing.T) {
+		mock := &mockBuildahCli{
+			VersionFunc: func() (cliwrappers.BuildahVersionInfo, error) {
+				return cliwrappers.BuildahVersionInfo{Version: "1.44.0"}, nil
+			},
+		}
+		c := &Build{
+			Params:      &BuildParams{},
+			CliWrappers: BuildCliWrappers{BuildahCli: mock},
+		}
+
+		err := c.detectBuildahVersion()
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(c.buildahVersion.Version).To(Equal("1.44.0"))
+		g.Expect(c.parsedBuildahVersion).To(Equal([]int{1, 44, 0}))
+	})
+
+	t.Run("should propagate error from Version()", func(t *testing.T) {
+		mock := &mockBuildahCli{
+			VersionFunc: func() (cliwrappers.BuildahVersionInfo, error) {
+				return cliwrappers.BuildahVersionInfo{}, errors.New("command not found")
+			},
+		}
+		c := &Build{
+			Params:      &BuildParams{},
+			CliWrappers: BuildCliWrappers{BuildahCli: mock},
+		}
+
+		err := c.detectBuildahVersion()
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("getting buildah version: command not found"))
+	})
+
+	t.Run("should propagate error from ParseVersion()", func(t *testing.T) {
+		mock := &mockBuildahCli{
+			VersionFunc: func() (cliwrappers.BuildahVersionInfo, error) {
+				return cliwrappers.BuildahVersionInfo{Version: "invalid"}, nil
+			},
+		}
+		c := &Build{
+			Params:      &BuildParams{},
+			CliWrappers: BuildCliWrappers{BuildahCli: mock},
+		}
+
+		err := c.detectBuildahVersion()
+
+		g.Expect(err).To(HaveOccurred())
+		g.Expect(err.Error()).To(ContainSubstring("parsing buildah version:"))
+	})
+}
+
 func Test_Build_detectContainerfile(t *testing.T) {
 	g := NewWithT(t)
 
@@ -2394,6 +2450,140 @@ func Test_Build_collectBaseImages(t *testing.T) {
 			} else {
 				g.Expect(result).To(Equal(tt.expected))
 			}
+		})
+	}
+}
+
+func Test_Build_collectBaseImages_multipleTargetStages(t *testing.T) {
+	g := NewWithT(t)
+
+	tests := []struct {
+		name                 string
+		dockerfile           string
+		targetStages         []int
+		dontSkipUnusedStages bool
+		expected             []string
+	}{
+		{
+			name: "collects images for all target stages",
+			dockerfile: strings.Join([]string{
+				"FROM imageA AS builder",
+				"RUN echo first",
+				"",
+				"FROM imageB AS builder",
+				"RUN echo second",
+			}, "\n"),
+			targetStages: []int{0, 1},
+			expected:     []string{"imageA", "imageB"},
+		},
+		{
+			name: "follows dependency trees of both target stages",
+			dockerfile: strings.Join([]string{
+				"FROM imageA AS dep-a",
+				"RUN echo dep-a",
+				"",
+				"FROM imageB AS dep-b",
+				"RUN echo dep-b",
+				"",
+				"FROM imageC AS builder",
+				"COPY --from=dep-a /a /a",
+				"",
+				"FROM imageD AS builder",
+				"COPY --from=dep-b /b /b",
+			}, "\n"),
+			targetStages: []int{2, 3},
+			expected:     []string{"imageA", "imageB", "imageC", "imageD"},
+		},
+		{
+			name: "with SkipUnusedStages=false, includes stages between non-contiguous targets",
+			dockerfile: strings.Join([]string{
+				"FROM imageA AS builder",
+				"RUN echo first",
+				"",
+				"FROM imageB AS middle",
+				"RUN echo middle",
+				"",
+				"FROM imageC AS builder",
+				"RUN echo second",
+			}, "\n"),
+			targetStages:         []int{0, 2},
+			dontSkipUnusedStages: true,
+			expected:             []string{"imageA", "imageB", "imageC"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			df := parseDockerfile(t, g, tt.dockerfile)
+
+			c := &Build{Params: &BuildParams{SkipUnusedStages: !tt.dontSkipUnusedStages}}
+			result := c.collectBaseImages(df, tt.targetStages...)
+			g.Expect(result).To(Equal(tt.expected))
+		})
+	}
+}
+
+func Test_Build_prePullBaseImages(t *testing.T) {
+	g := NewWithT(t)
+
+	containerfile := strings.Join([]string{
+		"FROM imageA AS builder",
+		"RUN echo first",
+		"",
+		"FROM imageB AS builder",
+		"RUN echo second",
+		"",
+		"FROM scratch",
+	}, "\n")
+
+	tests := []struct {
+		name                 string
+		parsedBuildahVersion []int
+		expectedPulledImages []string
+	}{
+		{
+			name:                 "buildah 1.44.0 should pull base images for all matching stages",
+			parsedBuildahVersion: []int{1, 44, 0},
+			expectedPulledImages: []string{"imageA", "imageB"},
+		},
+		{
+			name:                 "buildah 2.0.0 should pull base images for all matching stages",
+			parsedBuildahVersion: []int{2, 0, 0},
+			expectedPulledImages: []string{"imageA", "imageB"},
+		},
+		{
+			name:                 "buildah < 1.44.0 should pull only for first matching stage",
+			parsedBuildahVersion: []int{1, 43, 1},
+			expectedPulledImages: []string{"imageA"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			df := parseDockerfile(t, g, containerfile)
+
+			var pulledImages []string
+			mock := &mockBuildahCli{
+				PullFunc: func(args *cliwrappers.BuildahPullArgs) error {
+					pulledImages = append(pulledImages, args.Image)
+					return nil
+				},
+			}
+
+			c := &Build{
+				Params: &BuildParams{
+					Target:           "builder",
+					SkipUnusedStages: true,
+				},
+				CliWrappers:          BuildCliWrappers{BuildahCli: mock},
+				parsedBuildahVersion: tc.parsedBuildahVersion,
+			}
+
+			result, err := c.prePullBaseImages(df)
+
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(result).To(Equal(tc.expectedPulledImages))
+			g.Expect(pulledImages).To(Equal(tc.expectedPulledImages))
 		})
 	}
 }

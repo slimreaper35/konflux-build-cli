@@ -487,6 +487,9 @@ type Build struct {
 	Results       BuildResults
 	ResultsWriter common.ResultsWriterInterface
 
+	buildahVersion       cliWrappers.BuildahVersionInfo
+	parsedBuildahVersion []int
+
 	containerfilePath string
 
 	// pre-computed buildah arguments
@@ -671,6 +674,10 @@ func (c *Build) run() error {
 		return err
 	}
 
+	if err := c.detectBuildahVersion(); err != nil {
+		return err
+	}
+
 	if err := c.detectContainerfile(); err != nil {
 		return err
 	}
@@ -838,6 +845,21 @@ func (c *Build) validateParams() error {
 		l.Logger.Warn("RewriteTimestamp is enabled but SourceDateEpoch was not provided. Timestamps will not be re-written.")
 	}
 
+	return nil
+}
+
+func (c *Build) detectBuildahVersion() error {
+	buildahVersion, err := c.CliWrappers.BuildahCli.Version()
+	if err != nil {
+		return fmt.Errorf("getting buildah version: %w", err)
+	}
+	parsedVersion, err := buildahVersion.ParseVersion()
+	if err != nil {
+		return fmt.Errorf("parsing buildah version: %w", err)
+	}
+	c.buildahVersion = buildahVersion
+	c.parsedBuildahVersion = parsedVersion
+	l.Logger.Debugf("Using buildah version %s", c.buildahVersion.Version)
 	return nil
 }
 
@@ -1981,11 +2003,7 @@ func (c *Build) determineFinalLabels(df *dockerfile.Dockerfile, userLabels []str
 	// Only injected if --source-date-epoch (or --timestamp, which we do not expose) are not used.
 	// See https://www.mankier.com/1/buildah-build#--identity-label.
 	if c.Params.SourceDateEpoch == "" {
-		versionInfo, err := c.CliWrappers.BuildahCli.Version()
-		if err != nil {
-			return nil, fmt.Errorf("getting buildah version: %w", err)
-		}
-		labels["io.buildah.version"] = versionInfo.Version
+		labels["io.buildah.version"] = c.buildahVersion.Version
 	}
 
 	return labels, nil
@@ -2124,21 +2142,26 @@ func (c *Build) prePullBaseImages(df *dockerfile.Dockerfile) ([]string, error) {
 		return nil, nil
 	}
 
-	var targetStage int
+	var targetStages []int
 	if c.Params.Target != "" {
 		if stages, ok := findMatchingStages(df.Stages, c.Params.Target); ok {
-			// buildah's --target matches the first stage with a matching name
-			targetStage = stages[0]
+			if slices.Compare(c.parsedBuildahVersion, []int{1, 44, 0}) >= 0 {
+				// Buildah v1.44.0 builds all matching stages
+				targetStages = stages
+			} else {
+				// Earlier buildah versions select the first matching stage
+				targetStages = stages[:1]
+			}
 		} else {
 			return nil, fmt.Errorf("target stage %q not found", c.Params.Target)
 		}
 	} else {
-		targetStage = len(df.Stages) - 1
+		targetStages = []int{len(df.Stages) - 1}
 	}
 
 	var pulledImages []string
 
-	for _, image := range c.collectBaseImages(df, targetStage) {
+	for _, image := range c.collectBaseImages(df, targetStages...) {
 		if !isPullableImage(image) {
 			l.Logger.Warnf("Skipping pre-pull of %s: unsupported transport", image)
 			continue
@@ -2183,17 +2206,26 @@ func (c *Build) verifyBaseImageArchitectures(images []string) error {
 	return nil
 }
 
-// Collect all images needed to build the target stage.
+// Collect all images needed to build the target stage(s).
 //
+// The plural comes from https://github.com/containers/buildah/issues/6731:
+// When --target=<name> matches multiple stages with the same name, buildah version 1.44.0
+// builds all of them (the last one becomes the build output).
+//
+// Logic:
 // For all the "stages of interest":
 //   - For all the instructions that support a 'from' reference:
 //     (those being 'FROM <ref>', 'COPY --from=<ref>', 'RUN --mount=from=<ref>'):
 //     -- If <ref> is an image, collect this image
 //     -- If <ref> is an earlier stage in the containerfile, also collect images for that stage
 //
-// With skip-unused-stages=true (the default), there is one stage of interest - the target stage.
-// With skip-unused-stages=false, it's all the stages up to and including the target stage.
-func (c *Build) collectBaseImages(df *dockerfile.Dockerfile, targetStage int) []string {
+// With skip-unused-stages=true (the default), only the target stages are of interest.
+// With skip-unused-stages=false, it's all the stages up to and including the last target stage.
+func (c *Build) collectBaseImages(df *dockerfile.Dockerfile, targetStages ...int) []string {
+	if len(targetStages) == 0 {
+		panic("need at least one target stage")
+	}
+
 	baseImageSet := make(map[string]struct{})
 
 	stagesToProcess := []int{}
@@ -2208,11 +2240,11 @@ func (c *Build) collectBaseImages(df *dockerfile.Dockerfile, targetStage int) []
 		}
 	}
 	if c.Params.SkipUnusedStages {
-		enqueue(targetStage)
+		enqueue(targetStages...)
 	} else {
 		// skip-unused-stages=false => buildah builds all stages up to and including the target stage
 		// The graph search algorithm is unnecessary in this case, but let's keep things simple
-		for i := range targetStage + 1 {
+		for i := range slices.Max(targetStages) + 1 {
 			enqueue(i)
 		}
 	}
@@ -2236,7 +2268,7 @@ func (c *Build) collectBaseImages(df *dockerfile.Dockerfile, targetStage int) []
 		for _, ref := range getFromRefsInCommands(stage) {
 			if stages, ok := findMatchingStages(precedingStages, ref); ok {
 				// ref matches one or more stages
-				// buildah builds all matching stages, we have to pre-pull all the images
+				// buildah (even before v1.44.0) builds all matching stages, pre-pull all the images
 				enqueue(stages...)
 			} else {
 				// ref is an image
