@@ -2292,53 +2292,6 @@ LABEL final.stage.label=label-from-final-stage
 		))
 	})
 
-	t.Run("WithTarget", func(t *testing.T) {
-		SetupGomega(t)
-
-		contextDir := setupTestContext(t)
-
-		writeContainerfile(contextDir, `
-FROM scratch AS stage1
-
-LABEL stage1.label=label-from-stage1
-LABEL common.label=common-stage1
-
-
-# --target matches the *first* stage with a matching name, so this is skipped
-FROM base.image.does.not/exist:latest AS stage1
-
-LABEL stage1.label=unused-stage
-
-
-# (this is skipped too, the stage is unnamed)
-FROM stage1
-
-LABEL stage2.label=label-from-stage2
-LABEL common.label=common-stage2
-`)
-
-		outputRef := "localhost/test-with-target:" + GenerateUniqueTag(t)
-
-		buildParams := BuildParams{
-			Context:   contextDir,
-			OutputRef: outputRef,
-			Push:      false,
-			Target:    "stage1",
-		}
-
-		container := setupBuildContainerWithCleanup(t, buildParams, nil)
-
-		err := runBuild(container, buildParams)
-		Expect(err).ToNot(HaveOccurred())
-
-		imageMeta := getImageMeta(container, outputRef)
-		Expect(imageMeta.labels).To(SatisfyAll(
-			HaveKeyWithValue("stage1.label", "label-from-stage1"),
-			HaveKeyWithValue("common.label", "common-stage1"),
-			Not(HaveKey("stage2.label")),
-		))
-	})
-
 	t.Run("DontSkipUnusedStages", func(t *testing.T) {
 		SetupGomega(t)
 
@@ -2564,9 +2517,11 @@ RUN echo > /dev/udp/127.0.0.1/9
 # This base image is "unused" because the second base1 overrides this stage.
 # However, buildah will build *both* of the base1 stages, so we have to pre-pull both of the images.
 FROM {unusedBaseImage} AS base1
+LABEL base1.real_index=0
 RUN echo "the unused stage WAS built"
 
 FROM {baseImage1} AS base1
+LABEL base1.real_index=1
 # COPY directly from an image
 COPY --from={baseImage2} /random-data.bin /data/baseImage2.bin
 
@@ -2619,6 +2574,39 @@ RUN cp /random-data.bin /data/realBaseImage.bin
 				ContainSubstring("4096\tdata/baseImage3.bin"),
 				ContainSubstring("8192\tdata/realBaseImage.bin"),
 			))
+
+			// Re-run the same scenario with --target=base1
+			t.Run("WithTarget", func(t *testing.T) {
+				SetupGomega(t)
+
+				outputRef := "localhost/test-hermetic-pre-pull-with-target:" + GenerateUniqueTag(t)
+				buildParams.OutputRef = outputRef
+				buildParams.Target = "base1"
+
+				// Need clean storage to test the pre-pulling
+				newStorage, err := createContainerStorageDir()
+				t.Cleanup(func() { removeContainerStorageDir(newStorage) })
+				Expect(err).ToNot(HaveOccurred())
+
+				container := setupBuildContainerWithCleanup(t, buildParams, imageRegistry,
+					maybeMountContainerStorage(newStorage, "taskuser"))
+
+				err = runBuild(container, buildParams)
+				Expect(err).ToNot(HaveOccurred())
+
+				labels := getImageMeta(container, outputRef).labels
+				Expect(labels).To(HaveKeyWithValue("base1.real_index", "0"),
+					"--target=base1 should have matched the first base1, not the second")
+
+				stdout, _, err := container.ExecuteCommandWithOutput(
+					"buildah", "images", "--format", "{{.Name}}:{{.Tag}}",
+				)
+				Expect(err).ToNot(HaveOccurred())
+				lines := strings.Split(strings.TrimSpace(stdout), "\n")
+				// Should have only pulled the base image for the first base1 stage,
+				// i.e. the storage should have this base image and the output image
+				Expect(lines).To(ConsistOf(outputRef, unusedBaseImage))
+			})
 		})
 	})
 
