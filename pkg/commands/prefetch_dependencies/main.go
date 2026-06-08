@@ -44,6 +44,10 @@ func getPackageProxyConfiguration() ([]string, error) {
 		envEntry := fmt.Sprintf("HERMETO_NPM__PROXY_URL=%s", packageProxyConfig.NpmProxy)
 		hermetoEnv = append(hermetoEnv, envEntry)
 	}
+	if packageProxyConfig.PipProxy != "" {
+		envEntry := fmt.Sprintf("HERMETO_PIP__PROXY_URL=%s", packageProxyConfig.PipProxy)
+		hermetoEnv = append(hermetoEnv, envEntry)
+	}
 	if packageProxyConfig.PnpmProxy != "" {
 		envEntry := fmt.Sprintf("HERMETO_PNPM__PROXY_URL=%s", packageProxyConfig.PnpmProxy)
 		hermetoEnv = append(hermetoEnv, envEntry)

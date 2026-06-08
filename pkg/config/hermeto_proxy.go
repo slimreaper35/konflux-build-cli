@@ -8,6 +8,7 @@ import (
 type HermetoProxyConfig struct {
 	PackageRegistryProxyAllowed bool
 	NpmProxy                    string
+	PipProxy                    string
 	PnpmProxy                   string
 	YarnProxy                   string
 }
@@ -17,6 +18,7 @@ var _ KonfluxConfigPart[*HermetoProxyConfig] = (*HermetoProxyConfig)(nil)
 func NewHermetoProxyConfig(rawConfig KonfluxRawConfig) (*HermetoProxyConfig, error) {
 	hermetoProxyConfig := &HermetoProxyConfig{
 		NpmProxy:  rawConfig.HermetoNpmProxy,
+		PipProxy:  rawConfig.HermetoPipProxy,
 		PnpmProxy: rawConfig.HermetoPnpmProxy,
 		YarnProxy: rawConfig.HermetoYarnProxy,
 	}
@@ -35,6 +37,7 @@ func (c *HermetoProxyConfig) DeepCopy() *HermetoProxyConfig {
 	return &HermetoProxyConfig{
 		PackageRegistryProxyAllowed: c.PackageRegistryProxyAllowed,
 		NpmProxy:                    c.NpmProxy,
+		PipProxy:                    c.PipProxy,
 		PnpmProxy:                   c.PnpmProxy,
 		YarnProxy:                   c.YarnProxy,
 	}
