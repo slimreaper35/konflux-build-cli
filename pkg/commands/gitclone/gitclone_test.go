@@ -7,9 +7,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/konflux-ci/konflux-build-cli/pkg/cliwrappers"
+	"github.com/konflux-ci/konflux-build-cli/pkg/common"
 	. "github.com/onsi/gomega"
 )
 
@@ -1413,4 +1415,89 @@ func Test_GitClone_validateParams_depth(t *testing.T) {
 
 		g.Expect(err).ToNot(HaveOccurred())
 	})
+}
+
+func Test_parseCSV(t *testing.T) {
+	g := NewWithT(t)
+
+	tests := []struct {
+		name    string
+		input   string
+		want    []string
+		wantErr bool
+	}{
+		{name: "empty input", input: "", want: nil},
+		{name: "single value", input: "foo", want: []string{"foo"}},
+		{name: "comma-separated values", input: "foo,bar", want: []string{"foo", "bar"}},
+		{name: "trim leading space before field", input: " foo, bar", want: []string{"foo", "bar"}},
+		{name: "quoted comma in value", input: `"weird,path/*",other/*`, want: []string{"weird,path/*", "other/*"}},
+		{name: "single quoted value", input: `"vendor,extra/*"`, want: []string{"vendor,extra/*"}},
+		{name: "escaped double quote in quoted value", input: `"a""b/*"`, want: []string{`a"b/*`}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := parseCSV(tc.input)
+			if tc.wantErr {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(got).To(Equal(tc.want))
+		})
+	}
+}
+
+func Test_GitClone_symlinkCheckIgnorePattern(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("symlinks not supported on Windows")
+	}
+
+	g := NewWithT(t)
+
+	tmpDir := t.TempDir()
+	checkoutDir := filepath.Join(tmpDir, "source")
+	g.Expect(os.MkdirAll(checkoutDir, 0755)).To(Succeed())
+
+	outside := filepath.Join(t.TempDir(), "outside")
+	g.Expect(os.WriteFile(outside, []byte("x"), 0600)).To(Succeed())
+
+	linkDir := filepath.Join(checkoutDir, "weird,dir")
+	g.Expect(os.MkdirAll(linkDir, 0755)).To(Succeed())
+	g.Expect(os.Symlink(outside, filepath.Join(linkDir, "link"))).To(Succeed())
+
+	tests := []struct {
+		name            string
+		ignorePattern   string
+		wantExclude     []string
+		wantSymlinkFail bool
+	}{
+		{
+			name:            "CSV-quoted pattern with comma excludes matching symlink",
+			ignorePattern:   `"weird,dir/*"`,
+			wantExclude:     []string{"weird,dir/*"},
+			wantSymlinkFail: false,
+		},
+		{
+			name:            "unquoted comma splits into separate patterns",
+			ignorePattern:   `weird,dir/*`,
+			wantExclude:     []string{"weird", "dir/*"},
+			wantSymlinkFail: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			exclude, err := parseCSV(tc.ignorePattern)
+			g.Expect(err).ToNot(HaveOccurred())
+			g.Expect(exclude).To(Equal(tc.wantExclude))
+
+			err = common.CheckSymlinks(checkoutDir, exclude)
+			if tc.wantSymlinkFail {
+				g.Expect(err).To(HaveOccurred())
+				return
+			}
+			g.Expect(err).ToNot(HaveOccurred())
+		})
+	}
 }

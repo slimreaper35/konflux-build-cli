@@ -92,6 +92,16 @@ var ParamsConfig = map[string]common.Parameter{
 		DefaultValue: "true",
 		Usage:        "Check symlinks in the repo. If they're pointing outside of the repo, the build will fail.",
 	},
+	"symlink-check-ignore-pattern": {
+		Name:         "symlink-check-ignore-pattern",
+		EnvVarName:   "KBC_GIT_CLONE_SYMLINK_CHECK_IGNORE_PATTERN",
+		TypeKind:     reflect.String,
+		DefaultValue: "",
+		Usage: "CSV list of path patterns to exclude from the symlink check. Symlinks whose paths match are not checked. " +
+			"Patterns are relative to the checkout directory and must not start with '/'. " +
+			"Use '*' and '?' as wildcards ('*' matches across '/'). " +
+			"Quote patterns containing commas using CSV double quotes.",
+	},
 	"fetch-tags": {
 		Name:         "fetch-tags",
 		EnvVarName:   "KBC_GIT_CLONE_FETCH_TAGS",
@@ -185,6 +195,7 @@ type Params struct {
 	SparseCheckoutDirectories string `paramName:"sparse-checkout-directories"`
 	DeleteExisting            bool   `paramName:"delete-existing"`
 	EnableSymlinkCheck        bool   `paramName:"enable-symlink-check"`
+	SymlinkCheckIgnorePattern string `paramName:"symlink-check-ignore-pattern"`
 	FetchTags                 bool   `paramName:"fetch-tags"`
 	MergeTargetBranch         bool   `paramName:"merge-target-branch"`
 	TargetBranch              string `paramName:"target-branch"`

@@ -23,7 +23,11 @@ authentication, and optional merge with a target branch.`,
   kbc git-clone --url https://github.com/user/repo.git --sparse-checkout-directories "src,docs"
 
   # Clone and merge target branch (for PR testing)
-  kbc git-clone --url https://github.com/user/repo.git --revision feature-branch --merge-target-branch --target-branch main`,
+  kbc git-clone --url https://github.com/user/repo.git --revision feature-branch --merge-target-branch --target-branch main
+
+  # Clone while ignoring known test symlinks outside the tree
+  kbc git-clone --url https://github.com/helm/helm.git --revision release-3.20 \
+    --symlink-check-ignore-pattern 'internal/*/testdata/*,pkg/*/testdata/*'`,
 	Run: func(cmd *cobra.Command, args []string) {
 		l.Logger.Debug("Starting git-clone")
 		gitClone, err := gitclone.New(cmd)
