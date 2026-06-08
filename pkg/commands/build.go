@@ -410,6 +410,13 @@ var BuildParamsConfig = map[string]common.Parameter{
 		TypeKind:   reflect.Slice,
 		Usage:      "Resource limits to pass to buildah's --ulimit.",
 	},
+	"allow-cross-platform-images": {
+		Name:         "allow-cross-platform-images",
+		EnvVarName:   "KBC_BUILD_ALLOW_CROSS_PLATFORM_IMAGES",
+		TypeKind:     reflect.Bool,
+		DefaultValue: "false",
+		Usage:        "Allow base images with a different architecture than the host.\nEmits a warning instead of failing.",
+	},
 }
 
 type BuildParams struct {
@@ -465,6 +472,7 @@ type BuildParams struct {
 	CapDrop                    []string `paramName:"cap-drop"`
 	Devices                    []string `paramName:"devices"`
 	Ulimits                    []string `paramName:"ulimits"`
+	AllowCrossPlatformImages   bool     `paramName:"allow-cross-platform-images"`
 	ExtraArgs                  []string // Additional arguments to pass to buildah build
 }
 
@@ -708,14 +716,6 @@ func (c *Build) run() error {
 		return fmt.Errorf("setting up RHSM integration: %w", err)
 	}
 
-	if !c.Params.SkipInjections {
-		if c.Params.Target != "" {
-			l.Logger.Warnf("Injecting buildinfo is not supported with --target. Skipping.")
-		} else if err := c.injectBuildinfo(containerfile, c.mergedLabels, prefetchResources); err != nil {
-			return fmt.Errorf("injecting buildinfo metadata: %w", err)
-		}
-	}
-
 	pulledImages, err := c.prePullBaseImages(containerfile)
 	if err != nil {
 		return err
@@ -723,6 +723,14 @@ func (c *Build) run() error {
 
 	if err := c.verifyBaseImageArchitectures(pulledImages); err != nil {
 		return err
+	}
+
+	if !c.Params.SkipInjections {
+		if c.Params.Target != "" {
+			l.Logger.Warnf("Injecting buildinfo is not supported with --target. Skipping.")
+		} else if err := c.injectBuildinfo(containerfile, c.mergedLabels, prefetchResources); err != nil {
+			return fmt.Errorf("injecting buildinfo metadata: %w", err)
+		}
 	}
 
 	// The auto-magical host integration breaks our explicit RHSM support, disable it.
@@ -2111,13 +2119,8 @@ func splitTransport(imageRef string) (string, string) {
 	return "", imageRef
 }
 
+// Must be called after prePullBaseImages — the image is expected to be in local storage already.
 func (c *Build) getImageLabels(imageRef string) (map[string]string, error) {
-	l.Logger.Debugf("Pulling image %s to read labels...", imageRef)
-	err := c.pullImage(imageRef)
-	if err != nil {
-		return nil, fmt.Errorf("pulling image %s: %w", imageRef, err)
-	}
-
 	// buildah inspect doesn't support the <transport>: prefix, strip it
 	_, inspectableRef := splitTransport(imageRef)
 	info, err := c.CliWrappers.BuildahCli.InspectImage(inspectableRef)
@@ -2132,7 +2135,7 @@ func (c *Build) getImageLabels(imageRef string) (map[string]string, error) {
 // Primarily needed for hermetic builds where network access is disabled,
 // but also useful to ensure image pulls use our retry logic instead of relying on buildah.
 // Returns the list of pulled base images.
-func (c *Build) prePullBaseImages(df *dockerfile.Dockerfile) ([]string, error) {
+func (c *Build) prePullBaseImages(df *dockerfile.Dockerfile) ([]BaseImage, error) {
 	if df == nil || len(df.Stages) == 0 {
 		return nil, nil
 	}
@@ -2154,15 +2157,20 @@ func (c *Build) prePullBaseImages(df *dockerfile.Dockerfile) ([]string, error) {
 		targetStages = []int{len(df.Stages) - 1}
 	}
 
-	var pulledImages []string
+	var pulledImages []BaseImage
 
-	for _, image := range c.collectBaseImages(df, targetStages...) {
-		if !isPullableImage(image) {
-			l.Logger.Warnf("Skipping pre-pull of %s: unsupported transport", image)
+	baseImages, err := c.collectBaseImages(df, targetStages...)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, image := range baseImages {
+		if !isPullableImage(image.Ref) {
+			l.Logger.Warnf("Skipping pre-pull of %s: unsupported transport", image.Ref)
 			continue
 		}
 		l.Logger.Debugf("Pre-pulling base image: %s", image)
-		if err := c.pullImage(image); err != nil {
+		if err := c.pullImage(image.Ref, image.Platform); err != nil {
 			return nil, fmt.Errorf("pre-pulling image %s: %w", image, err)
 		}
 		pulledImages = append(pulledImages, image)
@@ -2171,7 +2179,7 @@ func (c *Build) prePullBaseImages(df *dockerfile.Dockerfile) ([]string, error) {
 	return pulledImages, nil
 }
 
-func (c *Build) pullImage(imageRef string) error {
+func (c *Build) pullImage(imageRef string, platform string) error {
 	var extraEnv []string
 	// Work around https://github.com/podman-container-tools/buildah/issues/6903.
 	// Limit this to buildah v1.44.0; tests will let us know in case later versions need it too.
@@ -2181,6 +2189,7 @@ func (c *Build) pullImage(imageRef string) error {
 
 	return c.CliWrappers.BuildahCli.Pull(&cliWrappers.BuildahPullArgs{
 		Image:     imageRef,
+		Platform:  platform,
 		HttpProxy: c.Params.ImagePullProxy,
 		NoProxy:   c.Params.ImagePullNoProxy,
 		TLSVerify: &c.Params.SrcTLSVerify,
@@ -2193,24 +2202,49 @@ func (c *Build) pullImage(imageRef string) error {
 //
 // If the image was a multi-arch index without the correct arch, buildah pull would
 // have already failed. This check catches single-arch references, where buildah
-// silently pulls the wrong architecture.
-func (c *Build) verifyBaseImageArchitectures(images []string) error {
+// silently pulls the wrong architecture. Every image is inspected regardless of
+// the --platform value in the FROM directive, because a digest reference can
+// resolve to an image whose architecture differs from the requested platform
+// (buildah succeeds with a warning in that case).
+//
+// When --allow-cross-platform-images is set, architecture mismatches are
+// downgraded from errors to warnings.
+func (c *Build) verifyBaseImageArchitectures(images []BaseImage) error {
 	hostArch := platforms.Normalize(platforms.DefaultSpec()).Architecture
 
 	for _, image := range images {
-		_, inspectableRef := splitTransport(image)
+		_, inspectableRef := splitTransport(image.Ref)
 		info, err := c.CliWrappers.BuildahCli.InspectImage(inspectableRef)
 		if err != nil {
-			return fmt.Errorf("inspecting base image %s: %w", image, err)
+			return fmt.Errorf("inspecting base image %s: %w", image.Ref, err)
 		}
 		if info.OCIv1.Architecture != hostArch {
+			if c.Params.AllowCrossPlatformImages {
+				l.Logger.Warnf(
+					"Base image %s has architecture '%s', expected '%s'. Cross-platform copy is a risky operation and we cannot guarantee expected results.",
+					image.Ref, info.OCIv1.Architecture, hostArch,
+				)
+				continue
+			}
 			return fmt.Errorf(
-				"base image %s has architecture '%s', expected '%s'. Use a multi-arch image reference instead of a single-architecture reference",
-				image, info.OCIv1.Architecture, hostArch,
+				"base image %s has architecture '%s', expected '%s'. "+
+					"Use a multi-arch image reference instead of a single-architecture reference, "+
+					"or explicitly allow cross-platform images in the build configuration",
+				image.Ref, info.OCIv1.Architecture, hostArch,
 			)
 		}
 	}
 	return nil
+}
+
+// BaseImage holds a base image reference together with metadata from the Containerfile.
+//
+// Platform is the --platform value from the FROM directive (e.g. "linux/amd64").
+// Variable references are expanded by dockerfile-json during parsing. It is passed
+// to buildah pull so the correct architecture is fetched.
+type BaseImage struct {
+	Ref      string
+	Platform string
 }
 
 // Collect all images needed to build the target stage(s).
@@ -2228,12 +2262,35 @@ func (c *Build) verifyBaseImageArchitectures(images []string) error {
 //
 // With skip-unused-stages=true (the default), only the target stages are of interest.
 // With skip-unused-stages=false, it's all the stages up to and including the last target stage.
-func (c *Build) collectBaseImages(df *dockerfile.Dockerfile, targetStages ...int) []string {
+//
+// Duplicate (ref, platform) pairs are deduplicated. If the same ref appears with
+// different platform values, an error is returned — buildah stores pulled images
+// by ref and a second pull with a different platform silently overwrites the first.
+// The workaround is to use platform-specific digests.
+func (c *Build) collectBaseImages(df *dockerfile.Dockerfile, targetStages ...int) ([]BaseImage, error) {
 	if len(targetStages) == 0 {
 		panic("need at least one target stage")
 	}
 
-	baseImageSet := make(map[string]struct{})
+	var images []BaseImage
+	refPlatform := make(map[string]string)
+
+	addImage := func(img BaseImage) error {
+		if prev, ok := refPlatform[img.Ref]; ok {
+			if prev != img.Platform {
+				return fmt.Errorf(
+					"base image %s is used with conflicting platforms (%q and %q). "+
+						"Buildah cannot store multiple architectures of the same image ref. "+
+						"Use platform-specific digests instead",
+					img.Ref, prev, img.Platform,
+				)
+			}
+			return nil
+		}
+		refPlatform[img.Ref] = img.Platform
+		images = append(images, img)
+		return nil
+	}
 
 	stagesToProcess := []int{}
 	stagesSeen := make(map[int]struct{})
@@ -2261,10 +2318,12 @@ func (c *Build) collectBaseImages(df *dockerfile.Dockerfile, targetStages ...int
 		stage := df.Stages[stageIdx]
 		stagesToProcess = stagesToProcess[1:]
 
-		if stage.From.Image != nil {
-			baseImageSet[*stage.From.Image] = struct{}{}
-		} else if stage.From.Stage != nil {
+		if stage.From.Stage != nil {
 			enqueue(stage.From.Stage.Index)
+		} else if stage.From.Image != nil {
+			if err := addImage(BaseImage{Ref: *stage.From.Image, Platform: stage.Platform}); err != nil {
+				return nil, err
+			}
 		}
 
 		// 'From' refs can only reference earlier stages. If they reference a later stage
@@ -2281,12 +2340,14 @@ func (c *Build) collectBaseImages(df *dockerfile.Dockerfile, targetStages ...int
 				// ref is an image
 				// (the third option is that ref is a --build-context,
 				//  but we don't expose any way to add build contexts)
-				baseImageSet[ref] = struct{}{}
+				if err := addImage(BaseImage{Ref: ref}); err != nil {
+					return nil, err
+				}
 			}
 		}
 	}
 
-	return slices.Sorted(maps.Keys(baseImageSet))
+	return images, nil
 }
 
 // Given a list of containerfile stages and a string ref, determine if the ref matches any stage(s).
@@ -2450,7 +2511,7 @@ func (c *Build) writeContainerfileJson(containerfile *dockerfile.Dockerfile, out
 // (fully-qualified-name[:tag]@digest) and write the results to the specified path.
 //
 // The file format is one pair of space-separated "input-ref canonical-ref" per line.
-func (c *Build) writeResolvedBaseImages(pulledImages []string, outputPath string) error {
+func (c *Build) writeResolvedBaseImages(pulledImages []BaseImage, outputPath string) error {
 	l.Logger.Infof("Writing resolved base images to: %s", outputPath)
 
 	resolvedImages, err := c.resolveBaseImages(pulledImages)
@@ -2461,9 +2522,9 @@ func (c *Build) writeResolvedBaseImages(pulledImages []string, outputPath string
 	var s strings.Builder
 
 	for i := range pulledImages {
-		s.WriteString(pulledImages[i])
+		s.WriteString(pulledImages[i].Ref)
 		s.WriteByte(' ')
-		s.WriteString(resolvedImages[i])
+		s.WriteString(resolvedImages[i].Ref)
 		s.WriteByte('\n')
 	}
 
@@ -2475,11 +2536,11 @@ func (c *Build) writeResolvedBaseImages(pulledImages []string, outputPath string
 	return nil
 }
 
-func (c *Build) resolveBaseImages(pulledImages []string) ([]string, error) {
-	var resolvedImages []string
+func (c *Build) resolveBaseImages(pulledImages []BaseImage) ([]BaseImage, error) {
+	var resolvedImages []BaseImage
 
 	for _, image := range pulledImages {
-		_, bareImage := splitTransport(image)
+		_, bareImage := splitTransport(image.Ref)
 
 		inputRef, err := reference.Parse(bareImage)
 		if err != nil {
@@ -2489,7 +2550,7 @@ func (c *Build) resolveBaseImages(pulledImages []string) ([]string, error) {
 		_, hasDigest := inputRef.(reference.Digested)
 		if hasDigest && common.IsNormalizedRef(bareImage) {
 			l.Logger.Debugf("Resolving base images: input already canonical: %s", bareImage)
-			resolvedImages = append(resolvedImages, inputRef.String())
+			resolvedImages = append(resolvedImages, BaseImage{Ref: inputRef.String(), Platform: image.Platform})
 			continue
 		}
 
@@ -2544,7 +2605,7 @@ func (c *Build) resolveBaseImages(pulledImages []string) ([]string, error) {
 		}
 
 		l.Logger.Debugf("Resolving base images: %s resolved to %s", bareImage, resolvedRef)
-		resolvedImages = append(resolvedImages, resolvedRef.String())
+		resolvedImages = append(resolvedImages, BaseImage{Ref: resolvedRef.String(), Platform: image.Platform})
 	}
 
 	return resolvedImages, nil

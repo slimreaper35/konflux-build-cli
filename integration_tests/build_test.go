@@ -80,6 +80,7 @@ type BuildParams struct {
 	NoCache                    bool
 	CapAdd                     []string
 	CapDrop                    []string
+	AllowCrossPlatformImages   bool
 	ExtraArgs                  []string
 }
 
@@ -384,6 +385,9 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	if len(buildParams.CapDrop) > 0 {
 		args = append(args, "--cap-drop")
 		args = append(args, buildParams.CapDrop...)
+	}
+	if buildParams.AllowCrossPlatformImages {
+		args = append(args, "--allow-cross-platform-images")
 	}
 	if len(buildParams.ExtraArgs) > 0 {
 		args = append(args, "--")
@@ -3686,6 +3690,110 @@ EOF
 			Expect(err).To(HaveOccurred())
 			Expect(stderr).To(ContainSubstring("has architecture"))
 			Expect(stderr).To(ContainSubstring("Use a multi-arch image reference instead of a single-architecture reference"))
+		})
+
+		t.Run("SingleArchDigestWithPlatform", func(t *testing.T) {
+			SetupGomega(t)
+
+			contextDir := setupTestContext(t)
+			imageRefByDigest := baseImageRepo + "@" + foreignArchDigest
+			writeContainerfile(contextDir, fmt.Sprintf("FROM --platform=%s %s\n", foreignArch, imageRefByDigest))
+
+			outputRef := "localhost/wrong-arch-platform:" + GenerateUniqueTag(t)
+			buildParams := BuildParams{
+				Context:   contextDir,
+				OutputRef: outputRef,
+			}
+
+			container := setupBuildContainerWithCleanup(t, buildParams, imageRegistry)
+			_, stderr, err := runBuildWithOutput(container, buildParams)
+			Expect(err).To(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("has architecture"))
+			Expect(stderr).To(ContainSubstring("Use a multi-arch image reference instead of a single-architecture reference"))
+		})
+
+		t.Run("SingleArchDigestWithAllowFlag", func(t *testing.T) {
+			SetupGomega(t)
+
+			contextDir := setupTestContext(t)
+			imageRefByDigest := baseImageRepo + "@" + foreignArchDigest
+			writeContainerfile(contextDir, fmt.Sprintf("FROM %s\n", imageRefByDigest))
+
+			outputRef := "localhost/wrong-arch-allow:" + GenerateUniqueTag(t)
+			buildParams := BuildParams{
+				Context:                  contextDir,
+				OutputRef:                outputRef,
+				AllowCrossPlatformImages: true,
+			}
+
+			container := setupBuildContainerWithCleanup(t, buildParams, imageRegistry)
+			_, stderr, err := runBuildWithOutput(container, buildParams)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("Cross-platform copy is a risky operation"))
+		})
+
+		t.Run("PlatformWithBuildplatformArg", func(t *testing.T) {
+			SetupGomega(t)
+
+			contextDir := setupTestContext(t)
+			writeContainerfile(contextDir, fmt.Sprintf("ARG BUILDPLATFORM\nFROM --platform=$BUILDPLATFORM %s\n", baseImage))
+
+			outputRef := "localhost/buildplatform-arg:" + GenerateUniqueTag(t)
+			buildParams := BuildParams{
+				Context:   contextDir,
+				OutputRef: outputRef,
+			}
+
+			container := setupBuildContainerWithCleanup(t, buildParams, imageRegistry)
+			_, stderr, err := runBuildWithOutput(container, buildParams)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(stderr).ToNot(ContainSubstring("Cross-platform copy is a risky operation"))
+		})
+
+		t.Run("PlatformWithCustomArg", func(t *testing.T) {
+			SetupGomega(t)
+
+			contextDir := setupTestContext(t)
+			imageRefByDigest := baseImageRepo + "@" + foreignArchDigest
+			writeContainerfile(contextDir, fmt.Sprintf("ARG MYPLATFORM=%s\nFROM --platform=$MYPLATFORM %s\n", foreignArch, imageRefByDigest))
+
+			outputRef := "localhost/wrong-arch-customarg:" + GenerateUniqueTag(t)
+			buildParams := BuildParams{
+				Context:                  contextDir,
+				OutputRef:                outputRef,
+				AllowCrossPlatformImages: true,
+			}
+
+			container := setupBuildContainerWithCleanup(t, buildParams, imageRegistry)
+			_, stderr, err := runBuildWithOutput(container, buildParams)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("Cross-platform copy is a risky operation"))
+		})
+
+		t.Run("HermeticCrossPlatformPrePull", func(t *testing.T) {
+			SetupGomega(t)
+
+			contextDir := setupTestContext(t)
+			imageRefByDigest := baseImageRepo + "@" + foreignArchDigest
+			writeContainerfile(contextDir, fmt.Sprintf("FROM %s\n", imageRefByDigest))
+
+			outputRef := "localhost/wrong-arch-hermetic-prepull:" + GenerateUniqueTag(t)
+			buildParams := BuildParams{
+				Context:                  contextDir,
+				OutputRef:                outputRef,
+				Hermetic:                 true,
+				AllowCrossPlatformImages: true,
+			}
+
+			newStorage, err := createContainerStorageDir()
+			t.Cleanup(func() { removeContainerStorageDir(newStorage) })
+			Expect(err).ToNot(HaveOccurred())
+
+			container := setupBuildContainerWithCleanup(t, buildParams, imageRegistry,
+				maybeMountContainerStorage(newStorage, "taskuser"))
+			_, stderr, err := runBuildWithOutput(container, buildParams)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(stderr).To(ContainSubstring("Cross-platform copy is a risky operation"))
 		})
 
 		t.Run("IndexWithoutHostArch", func(t *testing.T) {
