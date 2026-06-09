@@ -40,6 +40,10 @@ func getPackageProxyConfiguration() ([]string, error) {
 	}
 	// Note that empty URLs must be sanitized here, or it would result in validation
 	// error in Hermeto.
+	if packageProxyConfig.GomodProxy != "" {
+		envEntry := fmt.Sprintf("HERMETO_GOMOD__PROXY_URL=%s", packageProxyConfig.GomodProxy)
+		hermetoEnv = append(hermetoEnv, envEntry)
+	}
 	if packageProxyConfig.NpmProxy != "" {
 		envEntry := fmt.Sprintf("HERMETO_NPM__PROXY_URL=%s", packageProxyConfig.NpmProxy)
 		hermetoEnv = append(hermetoEnv, envEntry)
