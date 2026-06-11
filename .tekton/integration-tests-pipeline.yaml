@@ -20,7 +20,7 @@ spec:
             value: https://github.com/konflux-ci/tekton-integration-catalog.git
           # using a stable version of fedora-vm-provision task, need to be updated when next stable version of the task is available
           - name: revision
-            value: eb2ed3198212e2bab0a347df57365c0737cf012c
+            value: 7f46023f16f0dfef66be9164bebc1c516f71c601
           - name: pathInRepo
             value: tasks/mapt-oci/fedora-virtual-machine/provision/0.1/fedora-vm-provision.yaml
       params:
@@ -127,7 +127,7 @@ spec:
             value: https://github.com/konflux-ci/tekton-integration-catalog.git
           # using a stable version of fedora-vm-deprovision task, need to be updated when next stable version of the task is available
           - name: revision
-            value: eb2ed3198212e2bab0a347df57365c0737cf012c
+            value: 7f46023f16f0dfef66be9164bebc1c516f71c601
           - name: pathInRepo
             value: tasks/mapt-oci/fedora-virtual-machine/deprovision/0.1/fedora-vm-deprovision.yaml
       params:
