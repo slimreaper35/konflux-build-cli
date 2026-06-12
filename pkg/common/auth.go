@@ -99,7 +99,7 @@ func GetDefaultAuthFile() string {
 }
 
 func readAuthFile(authFilePath string) (*RegistryAuths, error) {
-	data, err := os.ReadFile(authFilePath)
+	data, err := os.ReadFile(authFilePath) //nolint:gosec // auth file path is from controlled config
 	if err != nil {
 		return nil, err
 	}

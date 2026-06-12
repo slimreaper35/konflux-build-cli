@@ -621,7 +621,7 @@ func (c *Build) copyToTempWorkdir(filePath string) (copyPath string, err error) 
 		return "", err
 	}
 
-	infile, err := os.Open(filePath)
+	infile, err := os.Open(filePath) //nolint:gosec // filePath is from build context
 	if err != nil {
 		return "", err
 	}
@@ -1212,7 +1212,7 @@ func (c *Build) copyPrefetchDir() (string, error) {
 			if err != nil {
 				return err
 			}
-			return os.Symlink(target, dstPath)
+			return os.Symlink(target, dstPath) //nolint:gosec // G122: copying symlinks from prefetch dir in WalkDir
 		case 0: // regular
 			return copyFile(srcPath, dstPath)
 		default:
@@ -1238,7 +1238,7 @@ func copyFile(srcPath, dstPath string) (err error) {
 		return err
 	}
 
-	src, err := os.Open(srcPath)
+	src, err := os.Open(srcPath) //nolint:gosec // srcPath is from prefetch directory
 	if err != nil {
 		return err
 	}
@@ -1248,7 +1248,7 @@ func copyFile(srcPath, dstPath string) (err error) {
 		}
 	}()
 
-	dst, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, info.Mode().Perm())
+	dst, err := os.OpenFile(dstPath, os.O_CREATE|os.O_WRONLY|os.O_EXCL, info.Mode().Perm()) //nolint:gosec // dstPath is from prefetch directory copy
 	if err != nil {
 		return err
 	}
@@ -1298,7 +1298,7 @@ func (c *Build) injectPrefetchEnvToContainerfile(envMountPath string) error {
 		return fmt.Errorf("modifying containerfile to apply prefetch env: %w", err)
 	}
 
-	if err := os.WriteFile(c.containerfileCopyPath, []byte(result), 0644); err != nil {
+	if err := os.WriteFile(c.containerfileCopyPath, []byte(result), 0644); err != nil { //nolint:gosec // G703: path from build context
 		return fmt.Errorf("writing modified containerfile: %w", err)
 	}
 	return nil
@@ -1354,11 +1354,11 @@ func (c *Build) prepareYumReposMount(prefetchResources *prefetchResources) error
 			srcPath := filepath.Join(srcDir, filename)
 			dstPath := filepath.Join(mergedDir, filename)
 
-			content, err := os.ReadFile(srcPath)
+			content, err := os.ReadFile(srcPath) //nolint:gosec // srcPath is from yum repos directory
 			if err != nil {
 				return fmt.Errorf("reading %s: %w", srcPath, err)
 			}
-			if err := os.WriteFile(dstPath, content, 0666); err != nil {
+			if err := os.WriteFile(dstPath, content, 0666); err != nil { //nolint:gosec // G703: path from yum repos directory
 				return fmt.Errorf("writing %s: %w", dstPath, err)
 			}
 
@@ -1407,7 +1407,7 @@ func chmodAddRWX(rootDir string) error {
 		if entry.IsDir() || info.Mode()&0111 != 0 {
 			perm |= 0111 // +x for user, group, other
 		}
-		return os.Chmod(path, perm)
+		return os.Chmod(path, perm) //nolint:gosec // G122: intentionally fixing permissions in WalkDir callback
 	})
 }
 
@@ -1728,7 +1728,7 @@ func (c *Build) processLabelsAndAnnotations() error {
 		}
 	}
 
-	mergedLabels := append(defaultLabels, c.Params.Labels...)
+	mergedLabels := slices.Concat(defaultLabels, c.Params.Labels)
 
 	mergedAnnotations := defaultAnnotations
 	if c.Params.AnnotationsFile != "" {
@@ -1881,7 +1881,7 @@ func writeBuildinfoJSON(buildinfoDir string, value any, filename string) error {
 }
 
 func appendToFile(filePath, content string) error {
-	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND, 0)
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_APPEND, 0) //nolint:gosec // filePath is from buildinfo directory
 	if err != nil {
 		return err
 	}
@@ -1897,7 +1897,7 @@ func appendToFile(filePath, content string) error {
 // Return them wrapped in a "content manifest" (a deprecated format still needed by Clair).
 // https://github.com/konflux-ci/buildah-container/blob/5fd8a4b1163079c7978e79100ec51b41504e0f20/scripts/icm-injection-scripts/inject-icm.sh
 func determineContentSets(prefetchSbomFile string) (map[string]any, error) {
-	sbomContent, err := os.ReadFile(prefetchSbomFile)
+	sbomContent, err := os.ReadFile(prefetchSbomFile) //nolint:gosec // prefetchSbomFile is from prefetch directory
 	if err != nil {
 		return nil, fmt.Errorf("reading prefetch SBOM: %w", err)
 	}

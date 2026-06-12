@@ -41,7 +41,7 @@ func NewCliExecutor() *CliExecutor {
 // Execute runs specified command with given arguments.
 // Returns stdout, stderr, exit code, error
 func (e *CliExecutor) Execute(c Cmd) (string, string, int, error) {
-	cmd := exec.Command(c.Name, c.Args...)
+	cmd := exec.Command(c.Name, c.Args...) //nolint:gosec // CLI wrapper executes external tools by design
 	cmd.Dir = c.Dir
 	cmd.Env = c.Env
 

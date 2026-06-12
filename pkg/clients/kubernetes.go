@@ -23,7 +23,7 @@ func NewKubeClientSet() (*kubernetes.Clientset, error) {
 	if err != nil {
 		// Fallback to local kubeconfig file (for local development/testing)
 		kubeConfigPath := filepath.Join(os.Getenv("HOME"), ".kube", "config")
-		if _, err := os.Stat(kubeConfigPath); os.IsNotExist(err) {
+		if _, err := os.Stat(kubeConfigPath); os.IsNotExist(err) { //nolint:gosec // kubeConfigPath is derived from HOME env var, not user input
 			return nil, fmt.Errorf("kubeconfig file not found at %s and not in-cluster: %s", kubeConfigPath, err.Error())
 		}
 		config, err = clientcmd.BuildConfigFromFlags("", kubeConfigPath)

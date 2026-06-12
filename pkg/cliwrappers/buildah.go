@@ -356,7 +356,7 @@ func (b *BuildahCli) Push(args *BuildahPushArgs) (string, error) {
 
 	buildahLog.Debug("Push completed successfully")
 
-	content, err := os.ReadFile(digestFile)
+	content, err := os.ReadFile(digestFile) //nolint:gosec // digestFile is a controlled temp file path
 	if err != nil {
 		return "", err
 	}
@@ -727,7 +727,7 @@ func (b *BuildahCli) ManifestPush(args *BuildahManifestPushArgs) (string, error)
 
 	buildahLog.Debug("Manifest push completed successfully")
 
-	content, err := os.ReadFile(digestFile)
+	content, err := os.ReadFile(digestFile) //nolint:gosec // digestFile is a controlled temp file path
 	if err != nil {
 		return "", err
 	}

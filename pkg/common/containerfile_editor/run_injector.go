@@ -64,12 +64,12 @@ func newInternalInjector(content string) (*internalInjector, error) {
 	}
 
 	// Don't try to support non-ASCII escape tokens (only \ and ` should be valid anyway)
-	if rune(byte(result.EscapeToken)) != result.EscapeToken {
+	if rune(byte(result.EscapeToken)) != result.EscapeToken { //nolint:gosec // overflow is the exact condition being checked
 		return nil, fmt.Errorf("unsupported escape token: %c", result.EscapeToken)
 	}
 
 	inj.parsed = result
-	inj.escapeToken = byte(result.EscapeToken)
+	inj.escapeToken = byte(result.EscapeToken) //nolint:gosec // overflow checked on line above
 
 	return inj, nil
 }

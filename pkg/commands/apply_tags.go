@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 
 	cliWrappers "github.com/konflux-ci/konflux-build-cli/pkg/cliwrappers"
@@ -119,7 +120,7 @@ func (c *ApplyTags) Run() error {
 		return err
 	}
 
-	tags := append(c.Params.NewTags, tagsFromLabel...)
+	tags := slices.Concat(c.Params.NewTags, tagsFromLabel)
 	l.Logger.Debugf("Tags to create: %s", strings.Join(tags, ", "))
 
 	if err := c.applyTags(tags); err != nil {

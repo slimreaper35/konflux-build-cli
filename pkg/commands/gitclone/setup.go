@@ -263,7 +263,7 @@ const maxAuthFileSize = 1 << 20 // 1MB
 // readFileWithLimit reads a file, rejecting files larger than maxSize.
 // Uses file-descriptor-based stat and limited read to avoid TOCTOU races.
 func readFileWithLimit(path string, maxSize int64) (data []byte, err error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) //nolint:gosec // path is validated by caller
 	if err != nil {
 		return nil, err
 	}

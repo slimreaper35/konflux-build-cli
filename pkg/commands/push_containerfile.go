@@ -238,11 +238,11 @@ func (c *PushContainerfile) Run() error {
 				l.Logger.Warnf("failed to remove '%s' directory: %s", workDir, err.Error())
 			}
 		}()
-		content, err := os.ReadFile(absContainerfilePath)
+		content, err := os.ReadFile(absContainerfilePath) //nolint:gosec // containerfile path is validated
 		if err != nil {
 			return fmt.Errorf("error on reading file %s: %w", absContainerfilePath, err)
 		}
-		if err := os.WriteFile(filepath.Join(workDir, pushFilename), content, 0644); err != nil {
+		if err := os.WriteFile(filepath.Join(workDir, pushFilename), content, 0644); err != nil { //nolint:gosec // G703: path from controlled work directory
 			return fmt.Errorf("error on writing file: %w", err)
 		}
 	} else {

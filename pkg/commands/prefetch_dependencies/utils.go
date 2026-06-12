@@ -183,16 +183,16 @@ func injectSSLOptions(input any, ssl map[string]any) any {
 }
 
 func cpFile(sourcePath, destinationPath string) error {
-	if err := os.MkdirAll(filepath.Dir(destinationPath), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destinationPath), 0755); err != nil { //nolint:gosec // G703: path from controlled prefetch directory
 		return err
 	}
 
-	data, err := os.ReadFile(sourcePath)
+	data, err := os.ReadFile(sourcePath) //nolint:gosec // source path is from controlled prefetch directory
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(destinationPath, data, readOnlyFileMode)
+	return os.WriteFile(destinationPath, data, readOnlyFileMode) //nolint:gosec // G703: path from controlled prefetch directory
 }
 
 func fileExists(path string) bool {
@@ -229,11 +229,11 @@ func setupGitBasicAuth(authDir, sourceDir string) error {
 	passwordPath := filepath.Join(authDir, "password")
 
 	if fileExists(usernamePath) && fileExists(passwordPath) {
-		rawUsername, err := os.ReadFile(usernamePath)
+		rawUsername, err := os.ReadFile(usernamePath) //nolint:gosec // auth file from controlled workspace
 		if err != nil {
 			return err
 		}
-		rawPassword, err := os.ReadFile(passwordPath)
+		rawPassword, err := os.ReadFile(passwordPath) //nolint:gosec // auth file from controlled workspace
 		if err != nil {
 			return err
 		}
@@ -246,11 +246,11 @@ func setupGitBasicAuth(authDir, sourceDir string) error {
 		}
 
 		gitCredentialsContent := fmt.Sprintf("https://%s:%s@%s", username, password, hostname)
-		if err := os.WriteFile(filepath.Join(home, ".git-credentials"), []byte(gitCredentialsContent), readOnlyFileMode); err != nil {
+		if err := os.WriteFile(filepath.Join(home, ".git-credentials"), []byte(gitCredentialsContent), readOnlyFileMode); err != nil { //nolint:gosec // G703: writing git credentials to HOME
 			return err
 		}
 		gitConfigContent := fmt.Sprintf("[credential \"https://%s\"]\nhelper = store", hostname)
-		if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(gitConfigContent), readOnlyFileMode); err != nil {
+		if err := os.WriteFile(filepath.Join(home, ".gitconfig"), []byte(gitConfigContent), readOnlyFileMode); err != nil { //nolint:gosec // G703: writing git config to HOME
 			return err
 		}
 
@@ -283,7 +283,7 @@ func dropGoProxyFrom(configFile string) error {
 		return nil
 	}
 
-	configFileContent, err := os.ReadFile(configFile)
+	configFileContent, err := os.ReadFile(configFile) //nolint:gosec // config file path from controlled input
 	if err != nil {
 		return err
 	}
@@ -319,5 +319,5 @@ func dropGoProxyFrom(configFile string) error {
 
 	result := strings.Join(modifiedConfigFileContent, "\n")
 	log.Debugf("Using modified config file content:\n%s", result)
-	return os.WriteFile(configFile, []byte(result), readOnlyFileMode)
+	return os.WriteFile(configFile, []byte(result), readOnlyFileMode) //nolint:gosec // G703: configFile path from controlled input
 }

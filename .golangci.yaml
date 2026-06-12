@@ -59,6 +59,18 @@ linters:
       disabled-checks:
         - elseif
         - ifElseChain
+    gosec:
+      # Exclude file and directory permission rules.
+      # These produce noise in CLI tools that create/copy files
+      # with standard permissions (0755, 0644, etc.).
+      excludes:
+        - G301  # Expect directory permissions to be 0750 or less
+        - G302  # Expect file permissions to be 0600 or less
+        - G306  # Expect WriteFile permissions to be 0600 or less
+    staticcheck:
+      checks:
+        - "default"
+        - "-QF1001"  # De Morgan's law: not a meaningful readability improvement
 
 formatters:
   enable:
@@ -74,6 +86,3 @@ issues:
   # Set to 0 to disable.
   # Default: 3
   max-same-issues: 5
-  # Show only new issues created after the best common ancestor (merge-base against HEAD).
-  # Default: ""
-  new-from-merge-base: main
