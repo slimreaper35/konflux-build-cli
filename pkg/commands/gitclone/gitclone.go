@@ -105,6 +105,10 @@ func (c *GitClone) Run() error {
 		return err
 	}
 
+	if err := c.gatherCommitInfo(); err != nil {
+		return err
+	}
+
 	if c.Params.MergeTargetBranch {
 		if err := c.mergeTargetBranch(); err != nil {
 			return err
@@ -119,10 +123,6 @@ func (c *GitClone) Run() error {
 		if err := common.CheckSymlinks(c.getCheckoutDir(), exclude); err != nil {
 			return fmt.Errorf("symlink check: %w", err)
 		}
-	}
-
-	if err := c.gatherCommitInfo(); err != nil {
-		return err
 	}
 
 	if c.Params.FetchTags {
