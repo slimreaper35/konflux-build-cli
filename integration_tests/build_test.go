@@ -33,6 +33,7 @@ const (
 )
 
 type BuildParams struct {
+	Source                  string
 	Context                 string
 	Containerfile           string
 	OutputRef               string
@@ -224,7 +225,11 @@ func setupBuildContainer(buildParams BuildParams, imageRegistry ImageRegistry, o
 	container := NewBuildCliRunnerContainer("kbc-build", BuildImage, opts...)
 	// As of buildah v1.44.0, the user running 'buildah build' must own the context directory.
 	// Add :U to make podman change the owner to the container user.
-	container.AddVolumeWithOptions(buildParams.Context, "/workspace", "z,U")
+	mountDir := buildParams.Context
+	if buildParams.Source != "" {
+		mountDir = buildParams.Source
+	}
+	container.AddVolumeWithOptions(mountDir, "/workspace", "z,U")
 
 	var err error
 	if imageRegistry != nil {
@@ -247,7 +252,14 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	// Construct the build arguments
 	args := []string{"image", "build"}
 	args = append(args, "-t", buildParams.OutputRef)
-	args = append(args, "-c", "/workspace")
+	if buildParams.Source != "" {
+		args = append(args, "-s", "/workspace")
+		if buildParams.Context != "" {
+			args = append(args, "-c", buildParams.Context)
+		}
+	} else {
+		args = append(args, "-c", "/workspace")
+	}
 	if buildParams.Containerfile != "" {
 		args = append(args, "-f", buildParams.Containerfile)
 	}
@@ -4098,5 +4110,46 @@ RUN rm -r /etc/yum.repos.d && mkdir /etc/yum.repos.d
 			sbomImage := readSPDX(filepath.Join(contextDir, "sbom-image.json"))
 			Expect(sbomImage.packageNames()).To(ContainElements("glibc", "gpg-pubkey", "redhat-release"))
 		})
+	})
+
+	t.Run("SyftSourceAndContextHandling", func(t *testing.T) {
+		SetupGomega(t)
+
+		sourceDir := setupTestContext(t)
+		testutil.WriteFileTree(t, sourceDir, map[string]string{
+			"requirements.txt": "root-dependency==1.0.0",
+			// We'll use ./subdir as the context dir, so we only want this one in the SBOM
+			"subdir/requirements.txt": "subdir-dependency==1.0.0",
+			// But we'll use the root sourceDir as --source, so Syft should respect this config
+			".syft/config.yaml": `select-catalogers: ["-rpm-db-cataloger"]`,
+		})
+
+		writeContainerfile(sourceDir, fmt.Sprintf(`FROM %s`, baseImage))
+
+		outputRef := "localhost/test-syft-source-vs-context:" + GenerateUniqueTag(t)
+
+		buildParams := BuildParams{
+			Source:           sourceDir,
+			Context:          "subdir",
+			Containerfile:    "/workspace/Containerfile",
+			OutputRef:        outputRef,
+			SyftSourceOutput: "/workspace/sbom-source.json",
+			SyftImageOutput:  "/workspace/sbom-image.json",
+		}
+
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
+
+		sbomSource := readSPDX(filepath.Join(sourceDir, "sbom-source.json"))
+		Expect(sbomSource.packageNames()).To(SatisfyAll(
+			ContainElement("subdir-dependency"),
+			Not(ContainElement("root-dependency")),
+		))
+
+		sbomImage := readSPDX(filepath.Join(sourceDir, "sbom-image.json"))
+		Expect(sbomImage.packageNames()).ToNot(ContainElements("glibc", "gpg-pubkey", "redhat-release"),
+			".syft/config.yaml should have disabled the RPM DB cataloger")
 	})
 }
