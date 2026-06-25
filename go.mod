@@ -72,4 +72,4 @@ require (
 	sigs.k8s.io/yaml v1.6.0 // indirect
 )
 
-replace github.com/keilerkonzept/dockerfile-json => github.com/konflux-ci/dockerfile-json v0.0.0-20260616104032-af96464923a0
+replace github.com/keilerkonzept/dockerfile-json => github.com/konflux-ci/dockerfile-json v0.0.0-20260617133258-290fb3e2de6c

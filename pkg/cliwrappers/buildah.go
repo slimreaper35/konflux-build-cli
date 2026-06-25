@@ -391,6 +391,7 @@ func (b *BuildahCli) Push(args *BuildahPushArgs) (string, error) {
 
 type BuildahPullArgs struct {
 	Image     string
+	Platform  string // If set, passed as --platform to pull a specific OS/ARCH
 	HttpProxy string // Sets HTTP_PROXY and HTTPS_PROXY for the pull command
 	NoProxy   string // Sets NO_PROXY for the pull command
 	TLSVerify *bool
@@ -404,6 +405,9 @@ func (b *BuildahCli) Pull(args *BuildahPullArgs) error {
 	}
 
 	buildahArgs := []string{"pull"}
+	if args.Platform != "" {
+		buildahArgs = append(buildahArgs, "--platform", args.Platform)
+	}
 	if args.TLSVerify != nil {
 		buildahArgs = append(buildahArgs, fmt.Sprintf("--tls-verify=%t", *args.TLSVerify))
 	}
