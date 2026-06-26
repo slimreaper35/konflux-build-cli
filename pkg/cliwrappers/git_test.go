@@ -590,6 +590,24 @@ func Test_FetchWithRefspec(t *testing.T) {
 		g.Expect(err.Error()).To(ContainSubstring("remote must not be empty"))
 	})
 
+	t.Run("should split space-separated refspecs into individual arguments", func(t *testing.T) {
+		cli := newTestGitCli(func(workdir, command string, args ...string) (string, string, int, error) {
+			g.Expect(args).To(Equal([]string{
+				"fetch", "origin", "--update-head-ok", "--force",
+				"sha1:refs/remotes/origin/branch", "refs/tags/*:refs/tags/*",
+			}))
+			return "", "", 0, nil
+		})
+
+		err := cli.FetchWithRefspec(cliwrappers.GitFetchOptions{
+			Remote:      "origin",
+			Refspec:     "sha1:refs/remotes/origin/branch refs/tags/*:refs/tags/*",
+			MaxAttempts: 1,
+		})
+
+		g.Expect(err).ToNot(HaveOccurred())
+	})
+
 	t.Run("should return error on failure", func(t *testing.T) {
 		cli := newTestGitCli(func(workdir, command string, args ...string) (string, string, int, error) {
 			return "", "fatal: error", 128, errors.New("fetch failed")

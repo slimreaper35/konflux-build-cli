@@ -26,7 +26,7 @@ type GitCliInterface interface {
 	RevParse(ref string, short bool, length int) (string, error)
 	// RemoteAdd adds a new remote. Runs: git remote add <name> <url>
 	RemoteAdd(name, url string) (string, error)
-	// FetchWithRefspec fetches a refspec from a remote with retry. Runs: git fetch [options] <remote> [<refspec>]
+	// FetchWithRefspec fetches one or more refspecs from a remote with retry. Runs: git fetch [options] <remote> [<refspec>...]
 	FetchWithRefspec(opts GitFetchOptions) error
 	// Checkout checks out a ref. Runs: git checkout <ref>
 	Checkout(ref string) error
@@ -46,7 +46,12 @@ type GitCliInterface interface {
 
 // GitFetchOptions contains the options for FetchWithRefspec.
 type GitFetchOptions struct {
-	Remote      string
+	Remote string
+	// Refspec is the git refspec(s) to fetch. It may contain a single refspec
+	// (e.g. "refs/heads/main") or multiple space-separated refspecs
+	// (e.g. "sha1:refs/remotes/origin/branch refs/tags/*:refs/tags/*").
+	// When multiple refspecs are provided, they are split on whitespace and
+	// passed as separate arguments to git fetch.
 	Refspec     string
 	Depth       int
 	Submodules  bool
@@ -227,8 +232,9 @@ func (g *GitCli) FetchTags() ([]string, error) {
 	return tags, nil
 }
 
-// FetchWithRefspec fetches a specific refspec from a remote with optional depth and retry.
-// Runs: git fetch [--recurse-submodules=yes] [--depth=N] <remote> --update-head-ok --force [<refspec>]
+// FetchWithRefspec fetches one or more refspecs from a remote with optional depth and retry.
+// When opts.Refspec contains space-separated values, each is passed as a separate argument.
+// Runs: git fetch [--recurse-submodules=yes] [--depth=N] <remote> --update-head-ok --force [<refspec>...]
 func (g *GitCli) FetchWithRefspec(opts GitFetchOptions) error {
 	if opts.Remote == "" {
 		return errors.New("remote must not be empty")
@@ -246,7 +252,7 @@ func (g *GitCli) FetchWithRefspec(opts GitFetchOptions) error {
 	gitArgs = append(gitArgs, opts.Remote, "--update-head-ok", "--force")
 
 	if opts.Refspec != "" {
-		gitArgs = append(gitArgs, opts.Refspec)
+		gitArgs = append(gitArgs, strings.Fields(opts.Refspec)...)
 	}
 
 	retryer := NewRetryer(func() (string, string, int, error) {
