@@ -166,12 +166,18 @@ func (c *GitClone) setupBasicAuth() error {
 // to include an explicit --file flag pointing to the given credentials path.
 func rewriteGitConfigCredentialHelper(configContent, credentialsPath string) string {
 	lines := strings.Split(configContent, "\n")
+	matched := false
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed == "helper = store" {
+		parts := strings.SplitN(trimmed, "=", 2)
+		if len(parts) == 2 && strings.EqualFold(strings.TrimSpace(parts[0]), "helper") && strings.TrimSpace(parts[1]) == "store" {
 			indent := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
 			lines[i] = fmt.Sprintf("%shelper = store --file=%s", indent, credentialsPath)
+			matched = true
 		}
+	}
+	if !matched {
+		l.Logger.Warn("No 'helper = store' line found in .gitconfig; credentials may not be used by git")
 	}
 	return strings.Join(lines, "\n")
 }

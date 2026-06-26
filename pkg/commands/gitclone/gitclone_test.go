@@ -1058,6 +1058,112 @@ func Test_GitClone_setupBasicAuth(t *testing.T) {
 	})
 }
 
+func Test_rewriteGitConfigCredentialHelper(t *testing.T) {
+	g := NewWithT(t)
+
+	const credPath = "/internal/.git-credentials"
+
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "canonical spacing",
+			input:    "[credential]\n  helper = store",
+			expected: "[credential]\n  helper = store --file=" + credPath,
+		},
+		{
+			name:     "no spaces around equals",
+			input:    "[credential]\n  helper=store",
+			expected: "[credential]\n  helper = store --file=" + credPath,
+		},
+		{
+			name:     "space before equals only",
+			input:    "[credential]\n  helper =store",
+			expected: "[credential]\n  helper = store --file=" + credPath,
+		},
+		{
+			name:     "space after equals only",
+			input:    "[credential]\n  helper= store",
+			expected: "[credential]\n  helper = store --file=" + credPath,
+		},
+		{
+			name:     "extra spaces around equals",
+			input:    "[credential]\n  helper  =  store",
+			expected: "[credential]\n  helper = store --file=" + credPath,
+		},
+		{
+			name:     "tab indent preserved",
+			input:    "[credential]\n\thelper = store",
+			expected: "[credential]\n\thelper = store --file=" + credPath,
+		},
+		{
+			name:     "mixed tab and space indent preserved",
+			input:    "[credential]\n\t  helper = store",
+			expected: "[credential]\n\t  helper = store --file=" + credPath,
+		},
+		{
+			name:     "case insensitive key - capitalized",
+			input:    "[credential]\n  Helper = store",
+			expected: "[credential]\n  helper = store --file=" + credPath,
+		},
+		{
+			name:     "case insensitive key - uppercase",
+			input:    "[credential]\n  HELPER = store",
+			expected: "[credential]\n  helper = store --file=" + credPath,
+		},
+		{
+			name:     "no match returns content unchanged",
+			input:    "[credential]\n  helper = cache",
+			expected: "[credential]\n  helper = cache",
+		},
+		{
+			name:     "empty input",
+			input:    "",
+			expected: "",
+		},
+		{
+			name:     "multiple helper lines all rewritten",
+			input:    "[credential]\n  helper = store\n[credential \"https://github.com\"]\n  helper = store",
+			expected: "[credential]\n  helper = store --file=" + credPath + "\n[credential \"https://github.com\"]\n  helper = store --file=" + credPath,
+		},
+		{
+			name:     "already rewritten line not matched",
+			input:    "[credential]\n  helper = store --file=/old/path",
+			expected: "[credential]\n  helper = store --file=/old/path",
+		},
+		{
+			name:     "comment line not matched",
+			input:    "[credential]\n  # helper = store\n  helper = store",
+			expected: "[credential]\n  # helper = store\n  helper = store --file=" + credPath,
+		},
+		{
+			name:     "realistic multi-section config",
+			input:    "[user]\n  name = CI\n  email = ci@example.com\n[credential]\n  helper = store\n[http]\n  sslVerify = false",
+			expected: "[user]\n  name = CI\n  email = ci@example.com\n[credential]\n  helper = store --file=" + credPath + "\n[http]\n  sslVerify = false",
+		},
+		{
+			name:     "Tekton creds-init format",
+			input:    "[credential]\n\thelper = store\n",
+			expected: "[credential]\n\thelper = store --file=" + credPath + "\n",
+		},
+		{
+			// https://github.com/tektoncd/pipelines-as-code/blob/82843027ab11abb03ce42f4603361cc3718e9ee9/pkg/secrets/basic_auth.go#L18-L22
+			name:     "Pipelines-as-Code format",
+			input:    "\n\t[credential \"https://github.com\"]\n\thelper=store\n\t",
+			expected: "\n\t[credential \"https://github.com\"]\n\thelper = store --file=" + credPath + "\n\t",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := rewriteGitConfigCredentialHelper(tc.input, credPath)
+			g.Expect(result).To(Equal(tc.expected))
+		})
+	}
+}
+
 func Test_GitClone_setupSSH(t *testing.T) {
 	g := NewWithT(t)
 
