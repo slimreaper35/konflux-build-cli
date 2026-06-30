@@ -115,6 +115,27 @@ func TestSyftCli_Scan(t *testing.T) {
 		g.Expect(capturedCmd.LogOutput).To(BeTrue())
 	})
 
+	t.Run("should set select-catalogers", func(t *testing.T) {
+		syftCli, executor := setupSyftCli()
+		var capturedCmd cliwrappers.Cmd
+		executor.executeFunc = func(cmd cliwrappers.Cmd) (string, string, int, error) {
+			capturedCmd = cmd
+			return "", "", 0, nil
+		}
+
+		_, err := syftCli.Scan(&cliwrappers.SyftScanArgs{
+			Source:           "registry.io/org/image:tag",
+			Format:           "cyclonedx-json",
+			SelectCatalogers: []string{"-rpm-db-cataloger", "-go-module-file-cataloger"},
+		})
+
+		g.Expect(err).ToNot(HaveOccurred())
+		g.Expect(capturedCmd.Args).To(ContainElements(
+			"--select-catalogers=-rpm-db-cataloger",
+			"--select-catalogers=-go-module-file-cataloger",
+		))
+	})
+
 	t.Run("should set override-default-catalogers", func(t *testing.T) {
 		syftCli, executor := setupSyftCli()
 		var capturedCmd cliwrappers.Cmd

@@ -84,6 +84,7 @@ type BuildParams struct {
 	AllowCrossPlatformImages   bool
 	SyftSourceOutput           string
 	SyftImageOutput            string
+	SyftSelectCatalogers       string
 	SBOMFormat                 string
 	ExtraArgs                  []string
 }
@@ -409,6 +410,9 @@ func runBuildWithOutput(container *TestRunnerContainer, buildParams BuildParams)
 	}
 	if buildParams.SyftImageOutput != "" {
 		args = append(args, "--syft-image-output", buildParams.SyftImageOutput)
+	}
+	if buildParams.SyftSelectCatalogers != "" {
+		args = append(args, "--syft-select-catalogers", buildParams.SyftSelectCatalogers)
 	}
 	if buildParams.SBOMFormat != "" {
 		args = append(args, "--sbom-format", buildParams.SBOMFormat)
@@ -4157,5 +4161,44 @@ RUN rm -r /etc/yum.repos.d && mkdir /etc/yum.repos.d
 		sbomImage := readSPDX(filepath.Join(sourceDir, "sbom-image.json"))
 		Expect(sbomImage.packageNames()).ToNot(ContainElements("glibc", "gpg-pubkey", "redhat-release"),
 			".syft/config.yaml should have disabled the RPM DB cataloger")
+	})
+
+	t.Run("SyftSelectCatalogers", func(t *testing.T) {
+		SetupGomega(t)
+
+		contextDir := setupTestContext(t)
+		testutil.WriteFileTree(t, contextDir, map[string]string{
+			"go.mod":           "require k8s.io/api v0.35.0",
+			"requirements.txt": "requests==2.31.0",
+			"Cargo.lock":       `package = [{name = "rust-app", version = "1.0.0"}]`,
+		})
+
+		writeContainerfile(contextDir, fmt.Sprintf(`FROM %s`, baseImage))
+
+		outputRef := "localhost/test-syft-select-catalogers:" + GenerateUniqueTag(t)
+
+		buildParams := BuildParams{
+			Context:              contextDir,
+			OutputRef:            outputRef,
+			SyftSourceOutput:     "/workspace/sbom-source.json",
+			SyftImageOutput:      "/workspace/sbom-image.json",
+			SyftSelectCatalogers: "-rpm-db-cataloger,-go-module-file-cataloger,-python-package-cataloger",
+		}
+
+		container := setupBuildContainerWithCleanup(t, buildParams, nil)
+
+		err := runBuild(container, buildParams)
+		Expect(err).ToNot(HaveOccurred())
+
+		sbomSource := readSPDX(filepath.Join(contextDir, "sbom-source.json"))
+		Expect(sbomSource.packageNames()).To(SatisfyAll(
+			ContainElement("rust-app"),
+			Not(ContainElement("k8s.io/api")),
+			Not(ContainElement("requests")),
+		))
+
+		sbomImage := readSPDX(filepath.Join(contextDir, "sbom-image.json"))
+		Expect(sbomImage.packageNames()).ToNot(ContainElements("glibc", "gpg-pubkey", "redhat-release"),
+			"--syft-select-catalogers should have disabled the RPM DB cataloger")
 	})
 }

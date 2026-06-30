@@ -431,6 +431,13 @@ var BuildParamsConfig = map[string]common.Parameter{
 		TypeKind:   reflect.String,
 		Usage:      "File path where to write the output of scanning the built image with syft.",
 	},
+	"syft-select-catalogers": {
+		Name:       "syft-select-catalogers",
+		EnvVarName: "KBC_BUILD_SYFT_SELECT_CATALOGERS",
+		TypeKind:   reflect.String,
+		Usage: "Cataloger selection expressions to pass to syft's --select-catalogers flag.\n" +
+			"Accepts only a single value; pass multiple expressions as a comma-separated string.",
+	},
 	"sbom-format": {
 		Name:         "sbom-format",
 		EnvVarName:   "KBC_BUILD_SBOM_FORMAT",
@@ -496,6 +503,7 @@ type BuildParams struct {
 	AllowCrossPlatformImages   bool     `paramName:"allow-cross-platform-images"`
 	SyftSourceOutput           string   `paramName:"syft-source-output"`
 	SyftImageOutput            string   `paramName:"syft-image-output"`
+	SyftSelectCatalogers       string   `paramName:"syft-select-catalogers"`
 	SBOMFormat                 string   `paramName:"sbom-format"`
 	ExtraArgs                  []string // Additional arguments to pass to buildah build
 }
@@ -2605,6 +2613,11 @@ func (c *Build) runSyftScans() (err error) {
 		return fmt.Errorf("unexpected SBOM format requested: %q", c.Params.SBOMFormat)
 	}
 
+	var selectCatalogers []string
+	if c.Params.SyftSelectCatalogers != "" {
+		selectCatalogers = append(selectCatalogers, c.Params.SyftSelectCatalogers)
+	}
+
 	if c.Params.SyftSourceOutput != "" {
 		// Need absolute path in case --source changes the workdir
 		syftSourceOutput, err := filepath.Abs(c.Params.SyftSourceOutput)
@@ -2614,10 +2627,11 @@ func (c *Build) runSyftScans() (err error) {
 
 		l.Logger.Info("Running syft scan on context directory...")
 		_, err = c.CliWrappers.SyftCli.Scan(&cliWrappers.SyftScanArgs{
-			Source:     "dir:" + c.Params.Context,
-			Workdir:    c.Params.Source,
-			Format:     syftFormat,
-			OutputFile: syftSourceOutput,
+			Source:           "dir:" + c.Params.Context,
+			Workdir:          c.Params.Source,
+			Format:           syftFormat,
+			OutputFile:       syftSourceOutput,
+			SelectCatalogers: selectCatalogers,
 		})
 		if err != nil {
 			return fmt.Errorf("syft source scan: %w", err)
@@ -2653,6 +2667,7 @@ func (c *Build) runSyftScans() (err error) {
 			Format:                    syftFormat,
 			OutputFile:                syftImageOutput,
 			OverrideDefaultCatalogers: "image",
+			SelectCatalogers:          selectCatalogers,
 		})
 		if err != nil {
 			return fmt.Errorf("syft image scan: %w", err)

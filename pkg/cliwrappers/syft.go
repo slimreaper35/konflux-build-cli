@@ -44,6 +44,8 @@ type SyftScanArgs struct {
 	OutputFile string
 	// Override the base set of catalogers to use.
 	OverrideDefaultCatalogers string
+	// Enable or disable (sets of) catalogers using --select-catalogers.
+	SelectCatalogers []string
 	// Increase verbosity (1=info, 2=debug). By default, Syft doesn't log anything.
 	Verbosity int
 	// Run the scan from within the specified workdir to make Syft search for config files there.
@@ -73,6 +75,10 @@ func (s *SyftCli) Scan(args *SyftScanArgs) (string, error) {
 
 	if args.OverrideDefaultCatalogers != "" {
 		cmd.Args = append(cmd.Args, "--override-default-catalogers="+args.OverrideDefaultCatalogers)
+	}
+
+	for _, selectCatalogers := range args.SelectCatalogers {
+		cmd.Args = append(cmd.Args, "--select-catalogers="+selectCatalogers)
 	}
 
 	syftLog.Debugf("Running command:\n%s", shellJoin(cmd.Name, cmd.Args...))

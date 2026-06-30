@@ -4267,6 +4267,47 @@ func Test_Build_runSyftScans(t *testing.T) {
 		g.Expect(scanCalls).To(Equal(2))
 	})
 
+	t.Run("should pass select-catalogers to both scans", func(t *testing.T) {
+		g := NewWithT(t)
+		var capturedSourceArgs, capturedImageArgs *cliwrappers.SyftScanArgs
+
+		c := &Build{
+			Params: &BuildParams{
+				Context:              t.TempDir(),
+				OutputRef:            "localhost/test:latest",
+				SyftSourceOutput:     "/tmp/sbom-source.json",
+				SyftImageOutput:      "/tmp/sbom-image.json",
+				SyftSelectCatalogers: "-rpm-db-cataloger,-go-module-file-cataloger",
+				SBOMFormat:           "spdx",
+			},
+			CliWrappers: BuildCliWrappers{
+				BuildahCli: &mockBuildahCli{
+					FromFunc:  func(image string) (string, error) { return "ctr", nil },
+					MountFunc: func(container string) (string, error) { return "/mnt", nil },
+					RmFunc:    func(container string) error { return nil },
+				},
+				SyftCli: &mockSyftCli{
+					ScanFunc: func(args *cliwrappers.SyftScanArgs) (string, error) {
+						if capturedSourceArgs == nil {
+							capturedSourceArgs = args
+						} else {
+							capturedImageArgs = args
+						}
+						return "", nil
+					},
+				},
+			},
+		}
+
+		g.Expect(c.runSyftScans()).To(Succeed())
+		g.Expect(capturedSourceArgs.SelectCatalogers).To(Equal(
+			[]string{"-rpm-db-cataloger,-go-module-file-cataloger"},
+		))
+		g.Expect(capturedImageArgs.SelectCatalogers).To(Equal(
+			[]string{"-rpm-db-cataloger,-go-module-file-cataloger"},
+		))
+	})
+
 	t.Run("should propagate source scan error", func(t *testing.T) {
 		g := NewWithT(t)
 
