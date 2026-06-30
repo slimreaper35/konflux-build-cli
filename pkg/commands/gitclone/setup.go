@@ -213,16 +213,25 @@ func (c *GitClone) setupSSH() error {
 		return fmt.Errorf("failed to read SSH directory: %w", err)
 	}
 
+	var keyPaths []string
 	for _, entry := range entries {
-		if entry.IsDir() {
-			continue // Skip subdirectories
+		name := entry.Name()
+
+		srcPath := filepath.Join(sshDir, name)
+		// Skip directories and symlinks to dirs
+		if !fileExists(srcPath) {
+			continue
 		}
 
-		srcPath := filepath.Join(sshDir, entry.Name())
-		destPath := filepath.Join(destSSHDir, entry.Name())
-
+		// Copy files into destPath
+		destPath := filepath.Join(destSSHDir, name)
 		if err := copyFile(srcPath, destPath, 0400); err != nil {
-			return fmt.Errorf("failed to copy SSH file %s: %w", entry.Name(), err)
+			return fmt.Errorf("failed to copy SSH file %s: %w", name, err)
+		}
+
+		// Store discovered private key paths to refer to in ssh command later
+		if strings.HasPrefix(name, "id_") && !strings.HasSuffix(name, ".pub") {
+			keyPaths = append(keyPaths, destPath)
 		}
 	}
 
@@ -235,11 +244,8 @@ func (c *GitClone) setupSSH() error {
 		sshCmd += " -F /dev/null"
 	}
 
-	for _, entry := range entries {
-		name := entry.Name()
-		if strings.HasPrefix(name, "id_") && !strings.HasSuffix(name, ".pub") && !entry.IsDir() {
-			sshCmd += fmt.Sprintf(` -i "%s"`, filepath.Join(destSSHDir, name))
-		}
+	for _, keyPath := range keyPaths {
+		sshCmd += fmt.Sprintf(` -i "%s"`, keyPath)
 	}
 
 	knownHostsPath := filepath.Join(destSSHDir, "known_hosts")
