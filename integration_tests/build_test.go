@@ -4159,7 +4159,10 @@ RUN rm -r /etc/yum.repos.d && mkdir /etc/yum.repos.d
 		))
 
 		sbomImage := readSPDX(filepath.Join(sourceDir, "sbom-image.json"))
-		Expect(sbomImage.packageNames()).ToNot(ContainElements("glibc", "gpg-pubkey", "redhat-release"),
+		Expect(sbomImage.packageNames()).ToNot(SatisfyAny(
+			ContainElement("glibc"),
+			ContainElement("gpg-pubkey"),
+			ContainElement("redhat-release")),
 			".syft/config.yaml should have disabled the RPM DB cataloger")
 	})
 
@@ -4198,7 +4201,10 @@ RUN rm -r /etc/yum.repos.d && mkdir /etc/yum.repos.d
 		))
 
 		sbomImage := readSPDX(filepath.Join(contextDir, "sbom-image.json"))
-		Expect(sbomImage.packageNames()).ToNot(ContainElements("glibc", "gpg-pubkey", "redhat-release"),
+		Expect(sbomImage.packageNames()).ToNot(SatisfyAny(
+			ContainElement("glibc"),
+			ContainElement("gpg-pubkey"),
+			ContainElement("redhat-release")),
 			"--syft-select-catalogers should have disabled the RPM DB cataloger")
 	})
 }
