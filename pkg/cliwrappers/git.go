@@ -106,7 +106,7 @@ func parseGitVersion(output string) ([3]int, error) {
 		return [3]int{}, fmt.Errorf("failed to parse git version from output: %q", output)
 	}
 	var version [3]int
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		v, err := strconv.Atoi(m[i+1])
 		if err != nil {
 			return [3]int{}, fmt.Errorf("failed to parse git version component %q: %w", m[i+1], err)
@@ -224,7 +224,7 @@ func (g *GitCli) FetchTags() ([]string, error) {
 	}
 
 	tags := []string{}
-	for _, tag := range strings.Split(stdout, "\n") {
+	for tag := range strings.SplitSeq(stdout, "\n") {
 		if tag != "" {
 			tags = append(tags, tag)
 		}

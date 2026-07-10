@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -25,8 +26,8 @@ type gitCloneResult struct {
 // commit field, so unrelated log lines or earlier JSON fragments do not win.
 func parseGitCloneResult(stdout string) (gitCloneResult, error) {
 	lines := strings.Split(strings.TrimSpace(stdout), "\n")
-	for i := len(lines) - 1; i >= 0; i-- {
-		line := strings.TrimSpace(lines[i])
+	for _, line := range slices.Backward(lines) {
+		line := strings.TrimSpace(line)
 		if !strings.HasPrefix(line, "{") {
 			continue
 		}

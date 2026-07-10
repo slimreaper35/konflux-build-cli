@@ -345,10 +345,7 @@ func (c *GitClone) fetchRevision() error {
 
 	l.Logger.Debugf("Fetching from origin (depth=%d, refspec=%s)", c.Params.Depth, refspec)
 
-	maxAttempts := c.Params.RetryMaxAttempts
-	if maxAttempts < 1 {
-		maxAttempts = 1
-	}
+	maxAttempts := max(c.Params.RetryMaxAttempts, 1)
 
 	err := c.CliWrappers.GitCli.FetchWithRefspec(cliwrappers.GitFetchOptions{
 		Remote:      "origin",
@@ -398,10 +395,7 @@ func (c *GitClone) mergeTargetBranch() error {
 		}
 	}
 
-	maxAttempts := c.Params.RetryMaxAttempts
-	if maxAttempts < 1 {
-		maxAttempts = 1
-	}
+	maxAttempts := max(c.Params.RetryMaxAttempts, 1)
 
 	err := c.CliWrappers.GitCli.FetchWithRefspec(cliwrappers.GitFetchOptions{
 		Remote:      mergeRemote,
