@@ -18,11 +18,12 @@ The commands should be able to run:
 - `integration_tests` all integration tests.
 - `integration_tests/framework` framework to run integration tests.
 
-## Development
+## Verification
 
-After making any code changes, always make sure that:
-- unit tests pass
-- all linters pass
+Run these commands before submitting changes:
+- `make unit-test` — run all unit tests
+- `make lint` — run golangci-lint (installs automatically)
+- `make fmt` — format code
 
 ## References
 
