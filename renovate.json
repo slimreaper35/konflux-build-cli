@@ -4,6 +4,7 @@
     "config:recommended",
     "helpers:pinGitHubActionDigestsToSemver"
   ],
+  "postUpdateOptions": ["gomodTidy"],
   "customManagers": [
     {
       "customType": "regex",
@@ -15,6 +16,12 @@
     }
   ],
   "packageRules": [
+    {
+      "description": "Disable Go indirect dependency updates",
+      "matchManagers": ["gomod"],
+      "matchDepTypes": ["indirect"],
+      "enabled": false
+    },
     {
       "description": "Group task-runner updates",
       "matchPackageNames": ["quay.io/konflux-ci/task-runner"],
