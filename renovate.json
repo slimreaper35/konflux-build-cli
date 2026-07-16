@@ -15,13 +15,17 @@
       "autoReplaceStringTemplate": "\"quay.io/konflux-ci/task-runner:{{{newValue}}}{{#if newDigest}}@{{{newDigest}}}{{/if}}\""
     }
   ],
+  "gomod": {
+    "packageRules": [
+      {
+        "description": "Disable indirect Go dependency updates (MVS handles these)",
+        "matchManagers": ["gomod"],
+        "matchDepTypes": ["indirect"],
+        "enabled": false
+      }
+    ]
+  },
   "packageRules": [
-    {
-      "description": "Disable Go indirect dependency updates",
-      "matchManagers": ["gomod"],
-      "matchDepTypes": ["indirect"],
-      "enabled": false
-    },
     {
       "description": "Group task-runner updates",
       "matchPackageNames": ["quay.io/konflux-ci/task-runner"],
