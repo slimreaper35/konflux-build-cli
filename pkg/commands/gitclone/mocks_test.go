@@ -10,19 +10,20 @@ import (
 var _ cliwrappers.GitCliInterface = &mockGitCli{}
 
 type mockGitCli struct {
-	SetEnvFunc            func(key, value string)
-	InitFunc              func() error
-	SetSparseCheckoutFunc func(directories []string) error
-	RemoteAddFunc         func(name, url string) (string, error)
-	FetchWithRefspecFunc  func(opts cliwrappers.GitFetchOptions) error
-	CheckoutFunc          func(ref string) error
-	SubmoduleUpdateFunc   func(init bool, depth int, paths []string) error
-	RevParseFunc          func(ref string, short bool, length int) (string, error)
-	LogFunc               func(format string, count int) (string, error)
-	ConfigLocalFunc       func(key, value string) error
-	CommitFunc            func(message string) (string, error)
-	MergeFunc             func(ref, message string) (string, error)
-	FetchTagsFunc         func() ([]string, error)
+	SetEnvFunc             func(key, value string)
+	InitFunc               func() error
+	SetSparseCheckoutFunc  func(directories []string) error
+	RemoteAddFunc          func(name, url string) (string, error)
+	FetchWithRefspecFunc   func(opts cliwrappers.GitFetchOptions) error
+	CheckoutFunc           func(ref string) error
+	SubmoduleUpdateFunc    func(init bool, depth int, paths []string) error
+	SubmoduleFetchTagsFunc func() error
+	RevParseFunc           func(ref string, short bool, length int) (string, error)
+	LogFunc                func(format string, count int) (string, error)
+	ConfigLocalFunc        func(key, value string) error
+	CommitFunc             func(message string) (string, error)
+	MergeFunc              func(ref, message string) (string, error)
+	FetchTagsFunc          func() ([]string, error)
 }
 
 func (m *mockGitCli) SetEnv(key, value string) {
@@ -83,6 +84,13 @@ func (m *mockGitCli) Checkout(ref string) error {
 func (m *mockGitCli) SubmoduleUpdate(init bool, depth int, paths []string) error {
 	if m.SubmoduleUpdateFunc != nil {
 		return m.SubmoduleUpdateFunc(init, depth, paths)
+	}
+	return nil
+}
+
+func (m *mockGitCli) SubmoduleFetchTags() error {
+	if m.SubmoduleFetchTagsFunc != nil {
+		return m.SubmoduleFetchTagsFunc()
 	}
 	return nil
 }

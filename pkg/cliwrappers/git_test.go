@@ -494,7 +494,7 @@ func Test_FetchTags(t *testing.T) {
 		cli := newTestGitCli(func(workdir, command string, args ...string) (string, string, int, error) {
 			callCount++
 			if callCount == 1 {
-				g.Expect(args).To(Equal([]string{"fetch", "--tags"}))
+				g.Expect(args).To(Equal([]string{"fetch", "--force", "origin", "refs/tags/*:refs/tags/*"}))
 				return "", "", 0, nil
 			}
 			g.Expect(args).To(Equal([]string{"tag", "-l"}))

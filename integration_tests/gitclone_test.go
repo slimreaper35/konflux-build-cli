@@ -239,15 +239,19 @@ func TestGitClone(t *testing.T) {
 			},
 		},
 		{
-			name: "clone fails with two conflicting submodules",
+			name: "clone passes with two conflicting submodules",
 			setup: func(t *testing.T, workspaceDir string) map[string]string {
 				return map[string]string{"revision": prepareBareRepoWithTwoSubmodules(t, workspaceDir)}
 			},
-			url:     "file:///workspace/repo.git",
-			args:    []string{"--fetch-tags=true"},
-			wantErr: true,
+			url:  "file:///workspace/repo.git",
+			args: []string{"--fetch-tags=true"},
 			check: func(t *testing.T, workspaceDir, stdout, stderr string, _ map[string]string) {
-				Expect(stderr).To(ContainSubstring("not our ref"))
+				tags := runGit(t, filepath.Join(workspaceDir, "out"), "tag", "-l")
+				Expect(tags).To(Equal("tag-base-repo"))
+
+				submoduleTags := runGit(t, filepath.Join(workspaceDir, "out"), "submodule", "foreach", "git", "tag", "-l")
+				Expect(submoduleTags).To(ContainSubstring("tag-submodule-a"))
+				Expect(submoduleTags).ToNot(ContainSubstring("tag-submodule-b"))
 			},
 		},
 	}

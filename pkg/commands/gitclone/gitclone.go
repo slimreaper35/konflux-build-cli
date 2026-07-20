@@ -125,12 +125,6 @@ func (c *GitClone) Run() error {
 		}
 	}
 
-	if c.Params.FetchTags {
-		if _, err := c.CliWrappers.GitCli.FetchTags(); err != nil {
-			return err
-		}
-	}
-
 	return c.outputResults()
 }
 
@@ -321,6 +315,12 @@ func (c *GitClone) performClone() error {
 		return fmt.Errorf("git checkout failed: %w", err)
 	}
 
+	if c.Params.FetchTags {
+		if _, err := c.CliWrappers.GitCli.FetchTags(); err != nil {
+			return fmt.Errorf("failed to fetch tags: %w", err)
+		}
+	}
+
 	if c.Params.Submodules {
 		l.Logger.Debug("Updating submodules")
 		paths, err := parseCSV(c.Params.SubmodulePaths)
@@ -329,6 +329,12 @@ func (c *GitClone) performClone() error {
 		}
 		if err := c.CliWrappers.GitCli.SubmoduleUpdate(true, c.Params.Depth, paths); err != nil {
 			return fmt.Errorf("git submodule update failed: %w", err)
+		}
+
+		if c.Params.FetchTags {
+			if err := c.CliWrappers.GitCli.SubmoduleFetchTags(); err != nil {
+				return fmt.Errorf("failed to fetch tags from submodules: %w", err)
+			}
 		}
 	}
 
