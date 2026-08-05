@@ -223,7 +223,7 @@ func Test_GitClone_gatherCommitInfo(t *testing.T) {
 		err := c.gatherCommitInfo()
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("failed to get commit SHA"))
+		g.Expect(err.Error()).To(ContainSubstring("rev-parse failed"))
 	})
 
 	t.Run("should fail if getting short SHA fails", func(t *testing.T) {
@@ -239,7 +239,7 @@ func Test_GitClone_gatherCommitInfo(t *testing.T) {
 		err := c.gatherCommitInfo()
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("failed to get short commit SHA"))
+		g.Expect(err.Error()).To(ContainSubstring("rev-parse short failed"))
 	})
 
 	t.Run("should fail if getting timestamp fails", func(t *testing.T) {
@@ -259,7 +259,7 @@ func Test_GitClone_gatherCommitInfo(t *testing.T) {
 		err := c.gatherCommitInfo()
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("failed to get commit timestamp"))
+		g.Expect(err.Error()).To(ContainSubstring("git log failed"))
 	})
 
 	t.Run("should use custom short commit length", func(t *testing.T) {
@@ -391,7 +391,7 @@ func Test_GitClone_performClone(t *testing.T) {
 		err := c.performClone()
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git init failed"))
+		g.Expect(err.Error()).To(ContainSubstring("init failed"))
 	})
 
 	t.Run("should pass maxAttempts to FetchWithRefspec", func(t *testing.T) {
@@ -420,7 +420,7 @@ func Test_GitClone_performClone(t *testing.T) {
 		err := c.performClone()
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git fetch failed"))
+		g.Expect(err.Error()).To(ContainSubstring("network error"))
 	})
 
 	t.Run("should update submodules when enabled", func(t *testing.T) {
@@ -616,7 +616,7 @@ func Test_GitClone_Run(t *testing.T) {
 		err := c.Run()
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git init failed"))
+		g.Expect(err.Error()).To(ContainSubstring("init failed"))
 	})
 
 	t.Run("should fail if gathering commit info fails", func(t *testing.T) {
@@ -629,7 +629,7 @@ func Test_GitClone_Run(t *testing.T) {
 		err := c.Run()
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("failed to get commit SHA"))
+		g.Expect(err.Error()).To(ContainSubstring("rev-parse failed"))
 	})
 
 	t.Run("should fail if outputting results fails", func(t *testing.T) {

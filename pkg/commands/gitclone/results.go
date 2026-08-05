@@ -21,21 +21,21 @@ func (c *GitClone) gatherCommitInfo() error {
 	// Get full SHA
 	sha, err := c.CliWrappers.GitCli.RevParse("HEAD", false, 0)
 	if err != nil {
-		return fmt.Errorf("failed to get commit SHA: %w", err)
+		return err
 	}
 	c.Results.Commit = sha
 
 	// Get short SHA
 	shortSha, err := c.CliWrappers.GitCli.RevParse("HEAD", true, c.Params.ShortCommitLength)
 	if err != nil {
-		return fmt.Errorf("failed to get short commit SHA: %w", err)
+		return err
 	}
 	c.Results.ShortCommit = shortSha
 
 	// Get commit timestamp
 	timestamp, err := c.CliWrappers.GitCli.Log("%ct", 1)
 	if err != nil {
-		return fmt.Errorf("failed to get commit timestamp: %w", err)
+		return err
 	}
 	c.Results.CommitTimestamp = timestamp
 

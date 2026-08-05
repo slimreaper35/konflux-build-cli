@@ -280,7 +280,7 @@ func (c *GitClone) performClone() error {
 
 	l.Logger.Debug("Initializing git repository")
 	if err := c.CliWrappers.GitCli.Init(); err != nil {
-		return fmt.Errorf("git init failed: %w", err)
+		return err
 	}
 
 	// Configure sparse checkout if directories are specified
@@ -296,7 +296,7 @@ func (c *GitClone) performClone() error {
 
 	l.Logger.Debugf("Adding remote origin: %s", sanitizeURL(c.Params.URL))
 	if _, err := c.CliWrappers.GitCli.RemoteAdd("origin", c.Params.URL); err != nil {
-		return fmt.Errorf("git remote add failed: %w", err)
+		return err
 	}
 
 	if err := c.fetchRevision(); err != nil {
@@ -312,12 +312,12 @@ func (c *GitClone) performClone() error {
 
 	l.Logger.Debugf("Checking out %s", checkoutRef)
 	if err := c.CliWrappers.GitCli.Checkout(checkoutRef); err != nil {
-		return fmt.Errorf("git checkout failed: %w", err)
+		return err
 	}
 
 	if c.Params.FetchTags {
 		if _, err := c.CliWrappers.GitCli.FetchTags(); err != nil {
-			return fmt.Errorf("failed to fetch tags: %w", err)
+			return err
 		}
 	}
 
@@ -328,12 +328,12 @@ func (c *GitClone) performClone() error {
 			return fmt.Errorf("failed to parse submodule-paths: %w", err)
 		}
 		if err := c.CliWrappers.GitCli.SubmoduleUpdate(true, c.Params.Depth, paths); err != nil {
-			return fmt.Errorf("git submodule update failed: %w", err)
+			return err
 		}
 
 		if c.Params.FetchTags {
 			if err := c.CliWrappers.GitCli.SubmoduleFetchTags(); err != nil {
-				return fmt.Errorf("failed to fetch tags from submodules: %w", err)
+				return err
 			}
 		}
 	}
@@ -360,10 +360,7 @@ func (c *GitClone) fetchRevision() error {
 		Submodules:  c.Params.Submodules,
 		MaxAttempts: maxAttempts,
 	})
-	if err != nil {
-		return fmt.Errorf("git fetch failed: %w", err)
-	}
-	return nil
+	return err
 }
 
 // parseCSV parses a comma-separated string into a slice of trimmed values.
@@ -411,29 +408,29 @@ func (c *GitClone) mergeTargetBranch() error {
 		MaxAttempts: maxAttempts,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to fetch target branch: %w", err)
+		return err
 	}
 
 	err = c.CliWrappers.GitCli.ConfigLocal("user.email", c.Params.MergeCommitAuthorEmail)
 	if err != nil {
-		return fmt.Errorf("failed to configure merge commit author email: %w", err)
+		return err
 	}
 	err = c.CliWrappers.GitCli.ConfigLocal("user.name", c.Params.MergeCommitAuthorName)
 	if err != nil {
-		return fmt.Errorf("failed to configure merge commit author name: %w", err)
+		return err
 	}
 
 	// Get the current HEAD SHA before merging to use in the commit message
 	currentSha, err := c.CliWrappers.GitCli.RevParse("HEAD", false, 0)
 	if err != nil {
-		return fmt.Errorf("failed to get pre-merge HEAD SHA: %w", err)
+		return err
 	}
 
 	mergeRef := fmt.Sprintf("%s/%s", mergeRemote, c.Params.TargetBranch)
 	message := fmt.Sprintf("Merge branch '%s' from %s into %s", c.Params.TargetBranch, mergeRemote, currentSha)
 	merge, err := c.CliWrappers.GitCli.Merge(mergeRef, message)
 	if err != nil {
-		return fmt.Errorf("failed to merge target branch: %w", err)
+		return err
 	}
 	l.Logger.Debugf("Merge: %s", merge)
 
