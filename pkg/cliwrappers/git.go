@@ -137,7 +137,8 @@ func (g *GitCli) buildCmd(args []string) Cmd {
 // run executes a git command in the working directory, logs it, and returns
 // the trimmed stdout. Returns an error if the command fails or exits non-zero.
 func (g *GitCli) run(args ...string) (string, error) {
-	gitLog.Debugf("[command]: git %s (in %s)", strings.Join(args, " "), g.Workdir)
+	fullCmd := shellJoin("git", args...)
+	gitLog.Infof("[command] %s", fullCmd)
 	stdout, stderr, exitCode, err := g.Executor.Execute(g.buildCmd(args))
 	if err != nil || exitCode != 0 {
 		gitLog.Debugf("git %s stderr: %s", args[0], stderr)
@@ -271,6 +272,8 @@ func (g *GitCli) FetchWithRefspec(opts GitFetchOptions) error {
 		StopIfOutputContains("Permission denied").
 		StopIfOutputContains("Could not resolve hostname")
 
+	fullCmd := shellJoin("git", gitArgs...)
+	gitLog.Infof("[command] %s", fullCmd)
 	_, stderr, exitCode, err := retryer.Run()
 	if err != nil || exitCode != 0 {
 		gitLog.Debugf("git fetch stderr: %s", stderr)
