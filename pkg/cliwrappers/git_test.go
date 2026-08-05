@@ -228,7 +228,7 @@ func Test_Init(t *testing.T) {
 		err := cli.Init()
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git init failed"))
+		g.Expect(err.Error()).To(ContainSubstring("git init"))
 	})
 }
 
@@ -263,7 +263,7 @@ func Test_ConfigLocal(t *testing.T) {
 		err := cli.ConfigLocal("key", "value")
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git config failed"))
+		g.Expect(err.Error()).To(ContainSubstring("git config --local key value"))
 	})
 }
 
@@ -298,7 +298,7 @@ func Test_Checkout(t *testing.T) {
 		err := cli.Checkout("main")
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git checkout failed"))
+		g.Expect(err.Error()).To(ContainSubstring("git checkout main"))
 	})
 }
 
@@ -325,7 +325,7 @@ func Test_Commit(t *testing.T) {
 		_, err := cli.Commit("msg")
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git commit failed"))
+		g.Expect(err.Error()).To(ContainSubstring("git commit -m msg"))
 	})
 }
 
@@ -361,7 +361,7 @@ func Test_Merge(t *testing.T) {
 		_, err := cli.Merge("origin/main", "msg")
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git merge failed"))
+		g.Expect(err.Error()).To(ContainSubstring("git merge"))
 	})
 }
 
@@ -482,7 +482,7 @@ func Test_Log(t *testing.T) {
 		_, err := cli.Log("", 0)
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git log failed"))
+		g.Expect(err.Error()).To(ContainSubstring("git log"))
 	})
 }
 
@@ -531,7 +531,7 @@ func Test_FetchTags(t *testing.T) {
 		_, err := cli.FetchTags()
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git fetch failed"))
+		g.Expect(err.Error()).To(ContainSubstring("git fetch --force origin"))
 	})
 }
 
@@ -619,7 +619,7 @@ func Test_FetchWithRefspec(t *testing.T) {
 		})
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git fetch failed"))
+		g.Expect(err.Error()).To(ContainSubstring("git fetch origin --update-head-ok --force"))
 	})
 }
 
@@ -689,7 +689,7 @@ func Test_SubmoduleUpdate(t *testing.T) {
 		err := cli.SubmoduleUpdate(true, 0, nil)
 
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("git submodule failed"))
+		g.Expect(err.Error()).To(ContainSubstring("git submodule update"))
 	})
 }
 

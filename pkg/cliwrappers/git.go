@@ -134,17 +134,20 @@ func (g *GitCli) buildCmd(args []string) Cmd {
 	return cmd
 }
 
-// run executes a git command in the working directory, logs it, and returns
-// the trimmed stdout. Returns an error if the command fails or exits non-zero.
 func (g *GitCli) run(args ...string) (string, error) {
 	fullCmd := shellJoin("git", args...)
 	gitLog.Infof("[command] %s", fullCmd)
-	stdout, stderr, exitCode, err := g.Executor.Execute(g.buildCmd(args))
-	if err != nil || exitCode != 0 {
-		gitLog.Debugf("git %s stderr: %s", args[0], stderr)
-		return "", fmt.Errorf("git %s failed with exit code %d: %w", args[0], exitCode, err)
+	stdout, stderr, _, err := g.Executor.Execute(g.buildCmd(args))
+	return handleRunResult(fullCmd, stdout, stderr, err)
+}
+
+func handleRunResult(fullCmd, stdout, stderr string, err error) (string, error) {
+	if err == nil {
+		return strings.TrimSpace(stdout), nil
 	}
-	return strings.TrimSpace(stdout), nil
+	gitLog.Infof("[stdout]\n%s", stdout)
+	gitLog.Infof("[stderr]\n%s", stderr)
+	return "", fmt.Errorf("failed to run %s: %w", fullCmd, err)
 }
 
 // --- Repository operations ---
@@ -274,12 +277,9 @@ func (g *GitCli) FetchWithRefspec(opts GitFetchOptions) error {
 
 	fullCmd := shellJoin("git", gitArgs...)
 	gitLog.Infof("[command] %s", fullCmd)
-	_, stderr, exitCode, err := retryer.Run()
-	if err != nil || exitCode != 0 {
-		gitLog.Debugf("git fetch stderr: %s", stderr)
-		return fmt.Errorf("git fetch failed with exit code %d: %w", exitCode, err)
-	}
-	return nil
+	stdout, stderr, _, err := retryer.Run()
+	_, err = handleRunResult(fullCmd, stdout, stderr, err)
+	return err
 }
 
 // Checkout checks out the specified ref (branch, tag, or commit SHA).
