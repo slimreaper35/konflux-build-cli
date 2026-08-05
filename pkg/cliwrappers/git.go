@@ -72,7 +72,8 @@ type GitCli struct {
 var minGitVersion = [3]int{2, 25, 0}
 var gitVersionRegex = regexp.MustCompile(`git version (\d+)\.(\d+)\.(\d+)`)
 
-// NewGitCli creates a new GitCli instance after verifying git is available and meets the minimum version.
+// NewGitCli creates a new GitCli instance,
+// ensuring that the git CLI is available and its version meets the minimum required version.
 func NewGitCli(executor CliExecutorInterface, workdir string) (*GitCli, error) {
 	gitCliAvailable, err := CheckCliToolAvailable("git")
 	if err != nil {
@@ -82,9 +83,11 @@ func NewGitCli(executor CliExecutorInterface, workdir string) (*GitCli, error) {
 		return nil, errors.New("git CLI is not available")
 	}
 
-	stdout, _, _, err := executor.Execute(Command("git", "--version"))
+	gc := &GitCli{Executor: executor}
+
+	stdout, err := gc.run("--version")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get git version: %w", err)
+		return nil, err
 	}
 	version, err := parseGitVersion(stdout)
 	if err != nil {
@@ -96,10 +99,8 @@ func NewGitCli(executor CliExecutorInterface, workdir string) (*GitCli, error) {
 			minGitVersion[0], minGitVersion[1], minGitVersion[2])
 	}
 
-	return &GitCli{
-		Executor: executor,
-		Workdir:  workdir,
-	}, nil
+	gc.Workdir = workdir
+	return gc, nil
 }
 
 func parseGitVersion(output string) ([3]int, error) {

@@ -175,7 +175,7 @@ func Test_NewCli_versionCheck(t *testing.T) {
 
 		cli, err := cliwrappers.NewGitCli(executor, "/tmp")
 		g.Expect(err).To(HaveOccurred())
-		g.Expect(err.Error()).To(ContainSubstring("failed to get git version"))
+		g.Expect(err.Error()).To(ContainSubstring("git --version"))
 		g.Expect(cli).To(BeNil())
 	})
 
