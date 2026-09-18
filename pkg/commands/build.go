@@ -796,6 +796,14 @@ func (c *Build) run() error {
 		return err
 	}
 
+	if err := c.resolveBuildArgsFiles(); err != nil {
+		return err
+	}
+
+	if err := c.resolveAnnotationsFile(); err != nil {
+		return err
+	}
+
 	if err := c.detectBuildahVersion(); err != nil {
 		return err
 	}
@@ -1040,6 +1048,49 @@ func (c *Build) validateParams() error {
 	}
 
 	return nil
+}
+
+func (c *Build) resolveAnnotationsFile() error {
+	resolved, err := resolvePathAgainstSource(c.Params.AnnotationsFile, c.Params.Source)
+	if err != nil {
+		return fmt.Errorf("failed to resolve annotation file %q: %w", c.Params.AnnotationsFile, err)
+	}
+	c.Params.AnnotationsFile = resolved
+
+	return nil
+}
+
+func (c *Build) resolveBuildArgsFiles() error {
+	for i, file := range c.Params.BuildArgsFiles {
+		resolved, err := resolvePathAgainstSource(file, c.Params.Source)
+		if err != nil {
+			return fmt.Errorf("failed to resolve build args file %q: %w", file, err)
+		}
+		c.Params.BuildArgsFiles[i] = resolved
+	}
+
+	return nil
+}
+
+func resolvePathAgainstSource(path, source string) (string, error) {
+	if path == "" {
+		return "", nil
+	}
+
+	if source == "" {
+		source = "."
+	}
+
+	if !filepath.IsAbs(path) {
+		path = filepath.Join(source, path)
+	}
+
+	resolved, err := common.ResolvePath(path)
+	if err != nil {
+		return "", err
+	}
+
+	return resolved.String(), nil
 }
 
 func (c *Build) detectBuildahVersion() error {
