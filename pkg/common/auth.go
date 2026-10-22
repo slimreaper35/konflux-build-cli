@@ -68,6 +68,32 @@ func SelectRegistryAuthFromDefaultAuthFile(imageRef string) (*RegistryAuth, erro
 	return SelectRegistryAuth(imageRef, authFile)
 }
 
+// CreateDockerConfigDir creates a temporary directory containing a Docker-format config.json
+// with the given registry credentials.
+// The returned path is suitable for the DOCKER_CONFIG environment variable.
+// The caller is responsible for removing the directory after use.
+func CreateDockerConfigDir(registryAuth *RegistryAuth) (string, error) {
+	dir, err := os.MkdirTemp("", "temp-docker-config-*")
+	if err != nil {
+		return "", fmt.Errorf("failed to create temporary directory for docker config: %w", err)
+	}
+
+	file, err := os.Create(filepath.Join(dir, "config.json"))
+	if err != nil {
+		os.RemoveAll(dir)
+		return "", fmt.Errorf("failed to create docker config file: %w", err)
+	}
+	defer file.Close()
+
+	_, err = fmt.Fprintf(file, `{"auths":{"%s":{"auth":"%s"}}}`, registryAuth.Registry, registryAuth.Token)
+	if err != nil {
+		os.RemoveAll(dir)
+		return "", fmt.Errorf("failed to write docker config file: %w", err)
+	}
+
+	return dir, nil
+}
+
 // findAuth finds out authentication credential string by image repository.
 // Argument registryAuths contains loaded authentication credentials loaded from authfile.
 // If nothing is found, returns an empty string.
